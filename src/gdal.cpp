@@ -13,8 +13,19 @@
 
 #include <Rcpp.h>
 
+#include "gdal.h"
 #include "wkb.h"
 #include "gdal_sf_pkg.h"
+
+#if GDAL_VERSION_MAJOR == 2
+# if GDAL_VERSION_MINOR >= 5
+#  define HAVE250
+# endif
+#else
+# if GDAL_VERSION_MAJOR > 2
+#  define HAVE250
+# endif
+#endif
 
 //
 // Returns errors to R
@@ -43,6 +54,23 @@ static void __err_handler(CPLErr eErrClass, int err_no, const char *msg)
             break; // #nocov
     }
     return;
+}
+
+// #nocov start
+static void __err_silent(CPLErr eErrClass, int err_no, const char *msg)
+{
+    return;
+}
+// #nocov end
+
+void set_error_handler(void) 
+{
+    CPLSetErrorHandler((CPLErrorHandler)__err_handler);
+}
+
+void unset_error_handler(void) 
+{
+    CPLSetErrorHandler((CPLErrorHandler)__err_silent);
 }
 
 // [[Rcpp::export]]
@@ -93,6 +121,7 @@ Rcpp::List CPL_crs_parameters(std::string p4s) {
 	Rcpp::List out(7);
 	OGRErr Err;
 	OGRSpatialReference *srs = new OGRSpatialReference;
+	srs = handle_axis_order(srs);
 	handle_error(srs->importFromProj4(p4s.c_str()));
 	out(0) = Rcpp::NumericVector::create(srs->GetSemiMajor());
 	out(1) = Rcpp::NumericVector::create(srs->GetSemiMinor());
@@ -120,8 +149,10 @@ Rcpp::List CPL_crs_parameters(std::string p4s) {
 Rcpp::LogicalVector CPL_crs_equivalent(std::string crs1, std::string crs2) {
 	Rcpp::LogicalVector out(1);
 	OGRSpatialReference *srs1 = new OGRSpatialReference;
+	srs1 = handle_axis_order(srs1);
 	handle_error(srs1->importFromProj4(crs1.c_str()));
 	OGRSpatialReference *srs2 = new OGRSpatialReference;
+	srs2 = handle_axis_order(srs2);
 	handle_error(srs2->importFromProj4(crs2.c_str()));
 	out(0) = (bool) srs1->IsSame(srs2);
 	delete srs1;
@@ -140,8 +171,9 @@ std::vector<OGRGeometry *> ogr_from_sfc(Rcpp::List sfc, OGRSpatialReference **sr
 	if (p4s != NA_STRING) {
 		Rcpp::CharacterVector cv = crs["proj4string"];
 		local_srs = new OGRSpatialReference;
+		local_srs = handle_axis_order(local_srs);
 		OGRErr err = local_srs->importFromProj4(cv[0]);
-		if (err != 0) {
+		if (err != OGRERR_NONE) {
 			local_srs->Release(); // #nocov
 			handle_error(err);    // #nocov
 		}
@@ -150,10 +182,12 @@ std::vector<OGRGeometry *> ogr_from_sfc(Rcpp::List sfc, OGRSpatialReference **sr
 		Rcpp::RawVector r = wkblst[i];
 		OGRErr err = OGRGeometryFactory::createFromWkb(&(r[0]), local_srs, &(g[i]), 
 			r.length(), wkbVariantIso);
-		if (err != 0) {
-			if (local_srs != NULL)      // #nocov
-				local_srs->Release();   // #nocov
-			handle_error(err);          // #nocov
+		if (err != OGRERR_NONE) {
+			if (g[i] != NULL) // release: #nocov
+				OGRGeometryFactory::destroyGeometry(g[i]); // #nocov
+			if (local_srs != NULL)      // #nocov start
+				local_srs->Release();
+			handle_error(err);          // #nocov end
 		}
 	}
 	if (sref != NULL)
@@ -252,6 +286,7 @@ Rcpp::List sfc_from_ogr(std::vector<OGRGeometry *> g, bool destroy = false) {
 // [[Rcpp::export]]
 Rcpp::List CPL_crs_from_epsg(int epsg) {
 	OGRSpatialReference ref;
+	handle_axis_order(&ref);
 	if (ref.importFromEPSG(epsg) == OGRERR_NONE)
 		return get_crs(&ref);
 	else
@@ -262,7 +297,12 @@ Rcpp::List CPL_crs_from_epsg(int epsg) {
 Rcpp::List CPL_crs_from_wkt(Rcpp::CharacterVector wkt) {
 	char *cp = wkt[0];
 	OGRSpatialReference ref;
+	handle_axis_order(&ref);
+#if GDAL_VERSION_MAJOR <= 2 && GDAL_VERSION_MINOR <= 2
 	handle_error(ref.importFromWkt(&cp));
+#else
+	handle_error(ref.importFromWkt( (const char*) cp));
+#endif
 	return get_crs(&ref);
 }
 
@@ -335,19 +375,20 @@ Rcpp::List CPL_transform(Rcpp::List sfc, Rcpp::CharacterVector proj4) {
 
 	// import proj4string:
 	OGRSpatialReference *dest = new OGRSpatialReference;
+	dest = handle_axis_order(dest);
 	handle_error(dest->importFromProj4((const char *) (proj4[0])));
 
 	// transform geometries:
 	std::vector<OGRGeometry *> g = ogr_from_sfc(sfc, NULL);
 	if (g.size() == 0) {
-		dest->Release(); // #nocov
-		Rcpp::stop("CPL_transform: zero length geometry list"); // #nocov
+		dest->Release();
+		return sfc_from_ogr(g, true); // destroys g
 	}
 	OGRCoordinateTransformation *ct = 
 		OGRCreateCoordinateTransformation(g[0]->getSpatialReference(), dest);
 	if (ct == NULL) {
 		dest->Release(); // #nocov
-		Rcpp::stop("OGRCreateCoordinateTransformation() returned NULL: PROJ.4 available?"); // #nocov
+		Rcpp::stop("OGRCreateCoordinateTransformation() returned NULL: PROJ available?"); // #nocov
 	}
 	for (size_t i = 0; i < g.size(); i++) {
 		CPLPushErrorHandler(CPLQuietErrorHandler);
@@ -386,11 +427,12 @@ Rcpp::List CPL_wrap_dateline(Rcpp::List sfc, Rcpp::CharacterVector opt, bool qui
 // [[Rcpp::export]]
 Rcpp::List CPL_crs_from_proj4string(Rcpp::CharacterVector p4s) {
 	OGRSpatialReference ref;
+	handle_axis_order(&ref);
 	if (ref.importFromProj4(p4s[0]) == OGRERR_NONE)
 		return get_crs(&ref);
 	else {
 		const char *cp = p4s[0];
-		Rf_warning("Cannot import crs from PROJ.4 string `%s', missing crs returned\n", cp);
+		Rf_warning("GDAL cannot import PROJ.4 string `%s': returning missing CRS\n", cp);
 		return get_crs(NULL);
 	}
 }
@@ -405,6 +447,7 @@ Rcpp::List CPL_get_rgdal_drivers(int dummy) {
 	Rcpp::LogicalVector copy(ndr);
 	Rcpp::LogicalVector vattr(ndr);
 	Rcpp::LogicalVector rattr(ndr);
+	Rcpp::LogicalVector vsi_attr(ndr);
 	for (int i = 0; i < ndr; i++) {
 		GDALDriver *pDriver = GetGDALDriverManager()->GetDriver(i);
 		name(i) = GDALGetDriverShortName( pDriver );
@@ -413,15 +456,16 @@ Rcpp::List CPL_get_rgdal_drivers(int dummy) {
 		copy(i) =   (pDriver->GetMetadataItem(GDAL_DCAP_CREATECOPY) != NULL);
 		vattr(i) =  (pDriver->GetMetadataItem(GDAL_DCAP_VECTOR) != NULL);
 		rattr(i) =  (pDriver->GetMetadataItem(GDAL_DCAP_RASTER) != NULL);
+		vsi_attr(i) =  (pDriver->GetMetadataItem(GDAL_DCAP_VIRTUALIO) != NULL);
 	}
-	Rcpp::List ret(6);
-	ret(0) = name;
-	ret(1) = long_name;
-	ret(2) = create;
-	ret(3) = copy;
-	ret(4) = rattr;
-	ret(5) = vattr;
-	return ret;
+	return Rcpp::DataFrame::create(
+		Rcpp::Named("name") = name,
+		Rcpp::Named("long_name") = long_name,
+		Rcpp::Named("write") = create,
+		Rcpp::Named("copy") = copy,
+		Rcpp::Named("is_raster") = rattr,
+		Rcpp::Named("is_vector") = vattr,
+		Rcpp::Named("vsi") = vsi_attr);
 }
 
 // [[Rcpp::export]]
@@ -430,7 +474,11 @@ Rcpp::List CPL_sfc_from_wkt(Rcpp::CharacterVector wkt) {
 	OGRGeometryFactory f;
 	for (int i = 0; i < wkt.size(); i++) {
 		char *wkt_str = wkt(i);
+#if GDAL_VERSION_MAJOR <= 2 && GDAL_VERSION_MINOR <= 2
 		handle_error(f.createFromWkt(&wkt_str, NULL, &(g[i])));
+#else
+		handle_error(f.createFromWkt( (const char*) wkt_str, NULL, &(g[i])));
+#endif
 	}
 	return sfc_from_ogr(g, true);
 }
@@ -439,4 +487,16 @@ Rcpp::List CPL_sfc_from_wkt(Rcpp::CharacterVector wkt) {
 Rcpp::LogicalVector CPL_gdal_with_geos() {
 	bool withGEOS = OGRGeometryFactory::haveGEOS(); 
 	return Rcpp::LogicalVector::create(withGEOS);
+}
+
+OGRSpatialReference *handle_axis_order(OGRSpatialReference *sr, bool traditional) {
+#ifdef HAVE250
+	if (sr != NULL) {
+		if (traditional)
+			sr->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+		else
+			sr->SetAxisMappingStrategy(OAMS_AUTHORITY_COMPLIANT);
+	}
+#endif
+	return sr;
 }

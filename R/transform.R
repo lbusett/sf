@@ -56,7 +56,7 @@ sanity_check = function(x) {
 		else
 			stop(paste("no check implemented for", class(x)[1]))
     } else
-        x
+        x # nocov
 }
 
 #' @name st_transform
@@ -125,9 +125,11 @@ st_transform.sfg = function(x, crs , ...) {
 }
 
 #' @name st_transform
-#' @param type character; one of \code{proj}, \code{ellps}, \code{datum} or \code{units}
+#' @param type character; one of \code{have_datum_files}, \code{proj}, \code{ellps}, \code{datum}, \code{units} or \code{prime_meridians}; see Details.
 #' @export
-#' @details \code{st_proj_info} lists the available projections, ellipses, datums or units supported by the Proj.4 library
+#' @details \code{st_proj_info} lists the available projections, ellipses, datums or units supported by the Proj.4 library when \code{type} is equal to proj, ellps, datum or units; when \code{type} equals \code{have_datum_files} a boolean is returned indicating whether datum files are installed and accessible (checking for \code{conus}).
+#' 
+#' PROJ >= 6 does not provide option \code{type = "datums"}. PROJ < 6 does not provide the option \code{type = "prime_meridians"}.
 #' @examples
 #' st_proj_info("datum")
 st_proj_info = function(type = "proj") {
@@ -135,8 +137,9 @@ st_proj_info = function(type = "proj") {
 	if (type == "have_datum_files")
 		return(CPL_have_datum_files(0))
 
-    opts <- c("proj", "ellps", "datum", "units")
-    if (!(type %in% opts)) stop("unknown type")
+    opts <- c("proj", "ellps", "datum", "units", "prime_meridians")
+    if (!(type %in% opts))
+		stop("unknown type") # nocov
     t <- as.integer(match(type[1], opts) - 1)
 	res = CPL_proj_info(as.integer(t))
     if (type == "proj")
@@ -183,8 +186,7 @@ st_wrap_dateline.sfg = function(x, options = "WRAPDATELINE=YES", quiet = TRUE) {
 
 st_to_s2 = function(x) {
 	# to geocentric, spherical, unit sphere:
-	st_transform(x,
-		st_crs("+proj=geocent +a=1 +b=1 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs"))
+	st_transform(x, st_crs("+proj=geocent +a=1 +b=1 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs")) # nocov
 }
 
 #' directly transform a set of coordinates
@@ -195,5 +197,7 @@ st_to_s2 = function(x) {
 #' @param pts two-column numeric matrix, or object that can be coerced into a matrix
 #' @export
 sf_project = function(from, to, pts) {
+	#.Deprecated("lwgeom::st_transform_proj")
 	CPL_proj_direct(as.character(c(from[1], to[1])), as.matrix(pts))
 }
+

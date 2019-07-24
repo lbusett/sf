@@ -76,6 +76,8 @@ if ("SQLite" %in% st_drivers()$name && require(RSQLite)) {
 	m = dbReadTable(dbcon, "meuse.sqlite")
 	m$GEOMETRY = st_as_sfc(m$GEOMETRY, spatialite = FALSE) # ISO wkb
 	print(st_sf(m), n = 3)
+	# or:
+	(s = st_read(dbcon, "meuse.sqlite"))[1:3,]
 	dbDisconnect(dbcon)
 
 	db = system.file("sqlite/nc.sqlite", package = "sf")
@@ -118,4 +120,14 @@ if ("GML" %in% st_drivers()$name) {
   gml = system.file("gml/20170930_OB_530964_UKSH.xml.gz", package = "sf")
   print(st_read(gml, layer = "Parcely"), n = 0)
   print(st_read(gml, layer = "Parcely", int64_as_string=TRUE), n = 0)
+}
+
+# logical:
+if ("GPKG" %in% st_drivers()$name) {
+	tst = st_read(system.file("gpkg/nc.gpkg", package="sf"), quiet = TRUE) # default layer name
+	tst$bool = tst$NWBIR79 > 800 # logical
+	tst$bool[1:3] = NA
+	st_write(tst, "tst__.gpkg")
+	tst2 = st_read("tst__.gpkg")
+	print(identical(tst$bool, tst2$bool))
 }

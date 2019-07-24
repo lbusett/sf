@@ -25,8 +25,8 @@ format.sfc = function(x, ..., width = 30) {
 #' @return an object of class \code{sfc}, which is a classed list-column with simple feature geometries.
 #'
 #' @details A simple feature geometry list-column is a list of class
-#' \code{c("stc_TYPE", "sfc")} which most often contains objects of identical type; 
-#' in case of a mix of types or an empty set, \code{TYPE} is set to the 
+#' \code{c("stc_TYPE", "sfc")} which most often contains objects of identical type;
+#' in case of a mix of types or an empty set, \code{TYPE} is set to the
 #' superclass \code{GEOMETRY}.
 #' @examples
 #' pt1 = st_point(c(0,1))
@@ -119,37 +119,41 @@ sfg_is_empty = function(x) {
 
 #' @export
 "[.sfc" = function(x, i, j, ..., op = st_intersects) {
-    old = x
 	if (!missing(i) && (inherits(i, "sf") || inherits(i, "sfc") || inherits(i, "sfg")))
 		i = lengths(op(x, i, ...)) != 0
-	st_sfc(NextMethod(), crs = st_crs(old), precision = st_precision(old))
+	st_sfc(NextMethod(), crs = st_crs(x), precision = st_precision(x))
 }
 
 
 #' @export
-"[<-.sfc" = function (x, i, j, value) {
+#"[<-.sfc" = function (x, i, j, value) {
+"[<-.sfc" = function (x, i, value) {
 	if (is.null(value) || inherits(value, "sfg"))
 		value = list(value)
-	class(x) = setdiff(class(x), "sfc")
+	#class(x) = setdiff(class(x), "sfc")
+	x = unclass(x) # becomes a list, but keeps attributes
 	st_sfc(NextMethod())
 }
 
 #' @export
 c.sfc = function(..., recursive = FALSE) {
 	lst = list(...)
-	cls = class(lst[[1]])
-	eq = if (length(lst) > 1)
-			all(vapply(lst[-1], function(x) identical(class(x), cls), TRUE))
+	classes = sapply(lst, function(x) class(x)[1])
+	le = lengths(lst)
+	if (any(le > 0))
+		classes = classes[le > 0] # removes the empty set GEOMETRY objects
+	ucls = unique(classes)
+	cls = if (length(ucls) > 1) # a mix:
+			c("sfc_GEOMETRY", "sfc")
 		else
-			TRUE
-	if (! eq)
-		cls = c("sfc_GEOMETRY", "sfc")
+			c(ucls, "sfc")
 
 	ret = unlist(lapply(lst, unclass), recursive = FALSE)
 	attributes(ret) = attributes(lst[[1]]) # crs
 	class(ret) = cls
 	attr(ret, "bbox") = compute_bbox(ret) # dispatch on class
-	if (! eq)
+	attr(ret, "n_empty") = sum(sapply(lst, attr, which = "n_empty"))
+	if (inherits(ret, "sfc_GEOMETRY"))
 		attr(ret, "classes") = vapply(ret, class, rep("", 3))[2L,]
 	ret
 }
@@ -344,10 +348,14 @@ st_precision.sfc <- function(x) {
 #' Set precision
 #'
 #' @name st_precision
-#' @param precision numeric; see \link{st_as_binary} for how to do this.
-#' @details Setting a \code{precision} has no direct effect on coordinates of geometries, but merely set an attribute tag to an \code{sfc} object. The effect takes place in \link{st_as_binary} or, more precise, in the C++ function \code{CPL_write_wkb}, where simple feature geometries are being serialized to well-known-binary (WKB). This happens always when routines are called in GEOS library (geometrical operations or predicates), for writing geometries using \link{st_write}, \link{write_sf} or \link{st_write_db}, \code{st_make_valid} in package \code{lwgeom}; also \link{aggregate} and \link{summarise} by default union geometries, which calls a GEOS library function. Routines in these libraries receive rounded coordinates, and possibly return results based on them. \link{st_as_binary} contains an example of a roundtrip of \code{sfc} geometries through WKB, in order to see the rounding happening to R data.
+#' @param precision numeric, or object of class \code{units} with distance units (but see details); see \link{st_as_binary} for how to do this.
+#' @details If \code{precision} is a \code{units} object, the object on which we set precision must have a coordinate reference system with compatible distance units.
+#' 
+#' Setting a \code{precision} has no direct effect on coordinates of geometries, but merely set an attribute tag to an \code{sfc} object. The effect takes place in \link{st_as_binary} or, more precise, in the C++ function \code{CPL_write_wkb}, where simple feature geometries are being serialized to well-known-binary (WKB). This happens always when routines are called in GEOS library (geometrical operations or predicates), for writing geometries using \link{st_write} or \link{write_sf}, \code{st_make_valid} in package \code{lwgeom}; also \link{aggregate} and \link{summarise} by default union geometries, which calls a GEOS library function. Routines in these libraries receive rounded coordinates, and possibly return results based on them. \link{st_as_binary} contains an example of a roundtrip of \code{sfc} geometries through WKB, in order to see the rounding happening to R data.
 #'
 #' The reason to support precision is that geometrical operations in GEOS or liblwgeom may work better at reduced precision. For writing data from R to external resources it is harder to think of a good reason to limiting precision.
+#' 
+#' @seealso \link{st_as_binary} for an explanation of what setting precision does, and the examples therein.
 #' @examples
 #' x <- st_sfc(st_point(c(pi, pi)))
 #' st_precision(x)
@@ -363,6 +371,15 @@ st_set_precision.sfc <- function(x, precision) {
     if (length(precision) != 1) {
         stop("Precision applies to all dimensions and must be of length 1.", call. = FALSE)
     }
+
+	if (inherits(precision, "units")) {
+		u = st_crs(x, parameters=TRUE)$ud_unit
+		if (is.null(u) || !inherits(u, "units"))
+			stop("cannot use precision expressed as units when target object has no units (CRS) set")
+		units(precision) = 1/u # convert
+		precision = as.numeric(precision)
+	}
+
     if (is.na(precision) || !is.numeric(precision)) {
         stop("Precision must be numeric", call. = FALSE)
     }
@@ -459,8 +476,8 @@ check_ring_dir = function(x) {
 		pol
 	}
 	ret = switch(class(x)[1],
-		sfc_POLYGON= lapply(x, check_polygon),
-		sfc_MULTIPOLYGON= lapply(x, function(y) structure(lapply(y, check_polygon), class = class(y))),
+		sfc_POLYGON = lapply(x, check_polygon),
+		sfc_MULTIPOLYGON = lapply(x, function(y) structure(lapply(y, check_polygon), class = class(y))),
 		stop(paste("check_ring_dir: not supported for class", class(x)[1]))
 	)
 	attributes(ret) = attributes(x)
@@ -475,14 +492,17 @@ st_as_sfc.list = function(x, ..., crs = NA_crs_) {
 		return(st_sfc(crs = crs))
 
 	if (is.raw(x[[1]]))
-		st_as_sfc(structure(x, class = "WKB"), ...)
+		st_as_sfc.WKB(as_wkb(x), ..., crs = crs)
+	else if (inherits(x[[1]], "sfg"))
+		st_sfc(x, crs = crs)
 	else if (is.character(x[[1]])) { # hex wkb or wkt:
 		ch12 = substr(x[[1]], 1, 2)
 		if (ch12 == "0x" || ch12 == "00" || ch12 == "01") # hex wkb
-			st_as_sfc(structure(x, class = "WKB"), ...)
+			st_as_sfc.WKB(as_wkb(x), ..., crs = crs)
 		else
-			st_as_sfc(unlist(x), ...) # wkt
-	}
+			st_as_sfc(unlist(x), ..., crs = crs) # wkt
+	} else
+		stop(paste("st_as_sfc.list: don't know what to do with list with elements of class", class(x[[1]])))
 }
 
 #' @name st_as_sfc

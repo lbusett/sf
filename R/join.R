@@ -1,62 +1,55 @@
 check_join = function(x, y) {
 	if (inherits(y, "sf"))
-		stop("y should be a data.frame; for spatial joins, use st_join", .call = FALSE)
+		stop("y should be a data.frame; for spatial joins, use st_join", call. = FALSE)
 }
 
-sf_join = function(g, sf_column) {
+sf_join = function(g, sf_column, suffix_x = ".x") {
+	if (!(sf_column %in% names(g))) {
+		sf_column = paste0(sf_column, suffix_x)
+		stopifnot(sf_column %in% names(g))
+	}
 	attr(g[[ sf_column ]], "bbox") = NULL # remove, so that st_sfc() recomputes:
 	g[[ sf_column ]] = st_sfc(g[[ sf_column ]])
 	class(g) = setdiff(class(g), "sf")
-	st_sf(g)
+	st_sf(g, sf_column_name = sf_column)
 }
 
-#' @name dplyr
-#' @export
+#' @name tidyverse
+#' @inheritParams dplyr::inner_join
 inner_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
 
-#' @name dplyr
-#' @param x see \link[dplyr]{left_join}
-#' @param y see \link[dplyr]{left_join}
-#' @param by see \link[dplyr]{left_join}
-#' @param copy see \link[dplyr]{left_join}
-#' @param suffix see \link[dplyr]{left_join}
-#' @export
+#' @name tidyverse
 left_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
 
-#' @name dplyr
-#' @export
+#' @name tidyverse
 right_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
 
-#' @name dplyr
-#' @export
+#' @name tidyverse
 full_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
 
-#' @name dplyr
-#' @export
-semi_join.sf = function(x, y, by = NULL, copy = FALSE, ...) {
+#' @name tidyverse
+semi_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
 
-#' @name dplyr
-#' @export
-anti_join.sf = function(x, y, by = NULL, copy = FALSE, ...) {
+#' @name tidyverse
+anti_join.sf = function(x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...) {
 	check_join(x, y)
-	sf_join(NextMethod(), attr(x, "sf_column"))
+	sf_join(NextMethod(), attr(x, "sf_column"), suffix[1])
 }
-
 
 #' spatial left or inner join
 #'
@@ -148,5 +141,8 @@ st_join = function(x, y, join = st_intersects, FUN, suffix = c(".x", ".y"),
 			i = lapply(i, function(x) { if (length(x) == 0) NA_integer_ else x })
 		ix = rep(seq_len(nrow(x)), lengths(i))
 	}
-	st_sf(cbind(as.data.frame(x)[ix,], y[unlist(i), , drop = FALSE]))
+	if (inherits(x, "tbl_df") & requireNamespace("dplyr", quietly = TRUE))
+		st_sf(dplyr::bind_cols(x[ix,], y[unlist(i), , drop = FALSE]))
+  	else
+		st_sf(cbind(as.data.frame(x)[ix,], y[unlist(i), , drop = FALSE]))	
 }

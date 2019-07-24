@@ -5,19 +5,19 @@
 \alias{aggregate}
 \title{aggregate an \code{sf} object}
 \usage{
-\method{aggregate}{sf}(x, by, FUN, ..., do_union = TRUE, simplify = TRUE,
-  join = st_intersects)
+\method{aggregate}{sf}(x, by, FUN, ..., do_union = TRUE,
+  simplify = TRUE, join = st_intersects)
 }
 \arguments{
 \item{x}{object of class \link{sf}}
 
-\item{by}{either a list of grouping elements, each as long as the variables in the data frame \code{x} (see \link[stats]{aggregate}), or an object of class \code{sf} or \code{sfc}, the geometries of which are used to find aggregation groups of \code{x} by using function \code{join}}
+\item{by}{either a list of grouping vectors with length equal to \code{nrow(x)} (see \link[stats]{aggregate}), or an object of class \code{sf} or \code{sfc} with geometries that are used to generate groupings, using the binary predicate specified by the argument \code{join}}
 
 \item{FUN}{function passed on to \link[stats]{aggregate}, in case \code{ids} was specified and attributes need to be grouped}
 
 \item{...}{arguments passed on to \code{FUN}}
 
-\item{do_union}{logical; should grouped geometries be unioned using \link{st_union}?}
+\item{do_union}{logical; should grouped geometries be unioned using \link{st_union}? See details.}
 
 \item{simplify}{logical; see \link[stats]{aggregate}}
 
@@ -28,6 +28,12 @@ an \code{sf} object with aggregated attributes and geometries; additional groupi
 }
 \description{
 aggregate an \code{sf} object, possibly union-ing geometries
+}
+\details{
+In case \code{do_union} is \code{FALSE}, \code{aggregate} will simply combine geometries using \link{c.sfg}. When polygons sharing a boundary are combined, this leads to geometries that are invalid; see \url{https://github.com/r-spatial/sf/issues/681}.
+}
+\note{
+Does not work using the formula notation involving \code{~} defined in \link[stats]{aggregate}.
 }
 \examples{
 m1 = cbind(c(0, 0, 1, 0), c(0, 1, 1, 0))

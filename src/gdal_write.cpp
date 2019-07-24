@@ -4,6 +4,7 @@
 
 #include "ogrsf_frmts.h"
 #include "wkb.h"
+#include "gdal.h"
 #include "gdal_sf_pkg.h"
 
 std::vector<OGRFieldType> SetupFields(OGRLayer *poLayer, Rcpp::List obj) {
@@ -13,7 +14,7 @@ std::vector<OGRFieldType> SetupFields(OGRLayer *poLayer, Rcpp::List obj) {
 	for (int i = 0; i < obj.size(); i++) {
 		if (strcmp(cls[i], "character") == 0)
 			ret[i] = OFTString;
-		else if (strcmp(cls[i], "integer") == 0)
+		else if (strcmp(cls[i], "integer") == 0 || strcmp(cls[i], "logical") == 0)
 			ret[i] = OFTInteger;
 		else if (strcmp(cls[i], "numeric") == 0)
 			ret[i] = OFTReal;
@@ -26,6 +27,8 @@ std::vector<OGRFieldType> SetupFields(OGRLayer *poLayer, Rcpp::List obj) {
 			Rcpp::stop("Layer creation failed.\n");
 		}      // #nocov end
 		OGRFieldDefn oField(nm[i], ret[i]);
+		if (strcmp(cls[i], "logical") == 0)
+			oField.SetSubType(OFSTBoolean);
 		if (poLayer->CreateField(&oField) != OGRERR_NONE) { // #nocov start
 			Rcpp::Rcout << "Creating field " << nm[i] << " failed." << std::endl;
 			Rcpp::stop("Layer creation failed.\n");
@@ -141,9 +144,10 @@ void SetFields(OGRFeature *poFeature, std::vector<OGRFieldType> tp, Rcpp::List o
 }
 
 // [[Rcpp::export]]
-void CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVector layer,
+int CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVector layer,
 	Rcpp::CharacterVector driver, Rcpp::CharacterVector dco, Rcpp::CharacterVector lco,
-	Rcpp::List geom, Rcpp::CharacterVector dim, bool quiet = false, bool update = false,
+	Rcpp::List geom, Rcpp::CharacterVector dim, Rcpp::CharacterVector fids,
+	bool quiet = false, bool update = false,
 	bool delete_dsn = false, bool delete_layer = false) {
 
 	// init:
@@ -167,13 +171,15 @@ void CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVec
 			Rcpp::Rcout << "Deleting source `" << dsn[0] << "' using driver `" << driver[0] << "'" << std::endl;
 	}
 
-	// data set:
 	std::vector <char *> options = create_options(dco, quiet);
+	std::vector <char *> drivers = create_options(driver, true);
+
+	// data set:
 	GDALDataset *poDS; 
 
 	// delete layer:
-	if (delete_layer && (poDS = (GDALDataset *) GDALOpenEx(dsn[0], GDAL_OF_VECTOR | GDAL_OF_UPDATE, NULL, 
-				options.data(), NULL)) != NULL) { // don't complain if the layer is not present
+	if (delete_layer && (poDS = (GDALDataset *) GDALOpenEx(dsn[0], GDAL_OF_VECTOR | GDAL_OF_UPDATE, 
+				drivers.data(), options.data(), NULL)) != NULL) { // don't complain if the layer is not present
 		// find & delete layer:
 		bool deleted = false;
 		for (int iLayer = 0; iLayer < poDS->GetLayerCount(); iLayer++) {
@@ -199,8 +205,8 @@ void CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVec
 	}
 	
 	// update ds:
-	if (update && (poDS = (GDALDataset *) GDALOpenEx(dsn[0], GDAL_OF_VECTOR | GDAL_OF_UPDATE, NULL, 
-				options.data(), NULL)) != NULL) {
+	if (update && (poDS = (GDALDataset *) GDALOpenEx(dsn[0], GDAL_OF_VECTOR | GDAL_OF_UPDATE, 
+				drivers.data(), options.data(), NULL)) != NULL) {
 		if (! quiet)
 			Rcpp::Rcout << "Updating layer `" << layer[0] << "' to data source `" << dsn[0] <<
 			"' using driver `" << driver[0] << "'" << std::endl;
@@ -223,13 +229,26 @@ void CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVec
 			Rcpp::Rcout << "Writing layer `" << layer[0] << "' to data source `" << dsn[0] <<
 				"' using driver `" << driver[0] << "'" << std::endl;
 	}
-	bool transaction = (poDS->StartTransaction() == OGRERR_NONE);
+
+	// can & do transaction?
+	bool can_do_transaction = (poDS->TestCapability(ODsCTransactions) == TRUE); // can?
+	bool transaction = false;
+	if (can_do_transaction) { // try to start transaction:
+		unset_error_handler();
+		transaction = (poDS->StartTransaction() == OGRERR_NONE); // do?
+		set_error_handler();
+		if (! transaction) { // failed: #nocov start
+			GDALClose(poDS);
+			return 1; // transaction failed!
+		} // #nocov end
+	}
 
 	Rcpp::CharacterVector clsv = geom.attr("class");
 	OGRwkbGeometryType wkbType = (OGRwkbGeometryType) make_type(clsv[0], dim[0], false, NULL, 0);
 	// read geometries:
-	OGRSpatialReference *sref;
+	OGRSpatialReference *sref = NULL;
 	std::vector<OGRGeometry *> geomv = ogr_from_sfc(geom, &sref);
+	sref = handle_axis_order(sref);
 
 	// create layer:
 	options = create_options(lco, quiet);
@@ -249,28 +268,37 @@ void CPL_write_ogr(Rcpp::List obj, Rcpp::CharacterVector dsn, Rcpp::CharacterVec
 		Rcpp::Rcout << "fields:         " << fieldTypes.size() << std::endl;
 		Rcpp::Rcout << "geometry type:  " << OGRGeometryTypeToName(wkbType) << std::endl;
 	}
+
 	for (size_t i = 0; i < geomv.size(); i++) { // create all features & add to layer:
 		OGRFeature *poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
 		SetFields(poFeature, fieldTypes, obj, i, driver[0] == "ESRI Shapefile");
 		poFeature->SetGeometryDirectly(geomv[i]);
+		if (fids.size() > (int) i)
+			poFeature->SetFID(std::stoll(Rcpp::as<std::string>(fids[i]), NULL, 10));
 		if (poLayer->CreateFeature(poFeature) != OGRERR_NONE) {
 			Rcpp::Rcout << "Failed to create feature " << i << " in " << layer[0] << std::endl;
 		    // delete layer when  failing to  create feature
-		    OGRErr err = poDS->DeleteLayer(0);
+			OGRErr err = poDS->DeleteLayer(0);
 			GDALClose(poDS);
-			Rcpp::Rcout << "Failed to create feature " << i << " in " << layer[0] << std::endl;
 			if (err != OGRERR_NONE) { // #nocov start
 			    if (err == OGRERR_UNSUPPORTED_OPERATION)
 			        Rcpp::Rcout << "Deleting layer not supported by driver `" << driver[0] << "'" << std::endl;
-			    else
+			    else if (! transaction)
 			        Rcpp::Rcout << "Deleting layer `" << layer[0] << "' failed" << std::endl;
 			} // #nocov end
 			OGRFeature::DestroyFeature(poFeature);
-			Rcpp::stop("Feature creation failed.\n");
+			if (transaction)
+				return 1; // try once more, writing to tmp file and copy #nocov
+			else
+				Rcpp::stop("Feature creation failed.\n");
 		}
 		OGRFeature::DestroyFeature(poFeature); // deletes geom[i] as well
 	}
-	if (transaction && poDS->CommitTransaction() != OGRERR_NONE)
-		Rcpp::stop("CommitTransaction() failed.\n"); // #nocov
+	if (transaction && poDS->CommitTransaction() != OGRERR_NONE) { // #nocov start
+		poDS->RollbackTransaction();
+		GDALClose(poDS);
+		Rcpp::stop("CommitTransaction() failed.\n"); 
+	} // #nocov end
 	GDALClose(poDS);
+	return 0; // all O.K.
 }

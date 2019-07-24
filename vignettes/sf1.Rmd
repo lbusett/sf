@@ -3,7 +3,10 @@ title: "1. Simple Features for R"
 output:
   html_document:
     toc: true
-    theme: united
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 2
 vignette: >
   %\VignetteIndexEntry{1. Simple Features for R}
   %\VignetteEngine{knitr::rmarkdown}
@@ -238,7 +241,7 @@ We can see there is a single polygon with no rings:
 
 ```{r fig.height=3}
 par(mar = c(0,0,1,0))
-plot(nc[1])
+plot(nc[1], reset = FALSE) # reset = FALSE: we want to add to a plot with a legend
 plot(nc[1,1], col = 'grey', add = TRUE)
 ```
 
@@ -432,14 +435,14 @@ rounding during conversion to WKB, which might help certain
 geometrical operations succeed that would otherwise fail due to
 floating point representation. The model is that of GEOS, which
 copies from the Java Topology Suite
-([JTS](http://tsusiatsoftware.net/jts/main.html)), and works like this:
+([JTS](https://locationtech.github.io/jts/)), and works like this:
 
 * if precision is zero (default, unspecified), nothing is modified
 * negative values convert to float (4-byte real) precision
 * positive values convert to `round(x*precision)/precision`.
 
-For the precion model, see also
-[here](http://tsusiatsoftware.net/jts/javadoc/com/vividsolutions/jts/geom/PrecisionModel.html),
+For the precision model, see also
+[here](https://locationtech.github.io/jts/javadoc/org/locationtech/jts/geom/PrecisionModel.html),
 where it is written that: "... to specify 3 decimal places of
 precision, use a scale factor of 1000. To specify -3 decimal places
 of precision (i.e. rounding to the nearest 1000), use a scale
@@ -502,7 +505,7 @@ first layer, giving a warning in case there are more.
 `st_read` typically reads the coordinate reference system as
 `proj4string`, but not the EPSG (SRID).  GDAL cannot retrieve SRID
 (EPSG code) from `proj4string` strings, and, when needed, it has
-to be set by the user. See also the section on [crs](crs).
+to be set by the user. See also the section on [coordinate reference systems](#crs).
 
 `st_drivers()` returns a `data.frame` listing available drivers,
 and their metadata: names, whether a driver can write, and whether
@@ -613,16 +616,13 @@ This shows that `sf::st_read()` is substantially faster than
 files, and more than a factor of 4 for the KMZ file used in this
 benchmark, respectively.
 
-### Directly reading and writing to spatial databases
+### Connection to spatial databases
 
-Two further functions, `st_read_db` and `st_write_db` attempt to
-read and write from spatial databases, directly reading WKB or WKT
-without using GDAL. The advantage over `st_read` may be that instead
-of a complete table, the result of a (spatial) query may be fetched,
-limiting the amount of data that is read into R, and potentially
-benefiting from the spatial index of the database. Although intended
-to use the DBI interface, current use and testing of these functions
-are limited to PostGIS.
+Read and write functions, `st_read()` and `st_write()`, can handle 
+connections to spatial databases to read WKB or WKT directly
+without using GDAL.
+Although intended to use the DBI interface, current use and testing of these 
+functions are limited to PostGIS.
 
 ## Coordinate reference systems and transformations {#crs}
 
@@ -636,7 +636,7 @@ the CRS is unknown, or when we work with local coordinate systems
 (e.g. inside a building, a body, or an abstract space).
 
 `proj4string` is a generic, string-based description of a CRS,
-understood by the [PROJ.4](http://proj4.org/) library. It defines
+understood by the [PROJ](https://proj4.org/) library. It defines
 projection types and (often) defines parameter values for particular
 projections, and hence can cover an infinite amount of different
 projections.  This library (also used by GDAL) provides functions
@@ -762,9 +762,9 @@ plot(i, add = TRUE, col = 'green', lwd = 2)
 par(opar)
 ```
 
-## Non-valid geometries
+## Non-simple and non-valid geometries
 
-Invalid geometries are for instance self-intersecting lines (left) or polygons with slivers (middle) or self-intersections (right).
+Non-simple geometries are for instance self-intersecting lines (left); non-valid geometries are for instance polygons with slivers (middle) or self-intersections (right).
 
 ```{r}
 library(sf)

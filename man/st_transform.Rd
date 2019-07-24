@@ -2,21 +2,13 @@
 % Please edit documentation in R/transform.R
 \name{st_transform}
 \alias{st_transform}
-\alias{st_transform}
 \alias{st_transform.sfc}
-\alias{st_transform}
 \alias{st_transform.sf}
-\alias{st_transform}
 \alias{st_transform.sfg}
-\alias{st_transform}
 \alias{st_proj_info}
-\alias{st_transform}
 \alias{st_wrap_dateline}
-\alias{st_transform}
 \alias{st_wrap_dateline.sfc}
-\alias{st_transform}
 \alias{st_wrap_dateline.sf}
-\alias{st_transform}
 \alias{st_wrap_dateline.sfg}
 \title{Transform or convert coordinates of simple feature}
 \usage{
@@ -36,7 +28,8 @@ st_wrap_dateline(x, options, quiet)
 \method{st_wrap_dateline}{sfc}(x, options = "WRAPDATELINE=YES",
   quiet = TRUE)
 
-\method{st_wrap_dateline}{sf}(x, options = "WRAPDATELINE=YES", quiet = TRUE)
+\method{st_wrap_dateline}{sf}(x, options = "WRAPDATELINE=YES",
+  quiet = TRUE)
 
 \method{st_wrap_dateline}{sfg}(x, options = "WRAPDATELINE=YES",
   quiet = TRUE)
@@ -54,7 +47,7 @@ st_wrap_dateline(x, options, quiet)
 
 \item{use_gdal}{logical; this parameter is deprecated. For transformations using PROJ.4 directly rather than indirectly through GDAL, use \link[lwgeom]{st_transform_proj} of package \code{lwgeom} (see Details)}
 
-\item{type}{character; one of \code{proj}, \code{ellps}, \code{datum} or \code{units}}
+\item{type}{character; one of \code{have_datum_files}, \code{proj}, \code{ellps}, \code{datum}, \code{units} or \code{prime_meridians}; see Details.}
 
 \item{options}{character; should have "WRAPDATELINE=YES" to function; another parameter that is used is "DATELINEOFFSET=10" (where 10 is the default value)}
 
@@ -72,7 +65,9 @@ Some PROJ.4 projections are not supported by GDAL, e.g. \code{"+proj=wintri"} be
 
 The \code{st_transform} method for \code{sfg} objects assumes that the CRS of the object is available as an attribute of that name.
 
-\code{st_proj_info} lists the available projections, ellipses, datums or units supported by the Proj.4 library
+\code{st_proj_info} lists the available projections, ellipses, datums or units supported by the Proj.4 library when \code{type} is equal to proj, ellps, datum or units; when \code{type} equals \code{have_datum_files} a boolean is returned indicating whether datum files are installed and accessible (checking for \code{conus}).
+
+PROJ >= 6 does not provide option \code{type = "datums"}. PROJ < 6 does not provide the option \code{type = "prime_meridians"}.
 
 For a discussion of using \code{options}, see \url{https://github.com/r-spatial/sf/issues/280} and \url{https://github.com/r-spatial/sf/issues/541}
 }

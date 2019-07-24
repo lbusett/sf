@@ -3,31 +3,19 @@
 \docType{data}
 \name{st_crs}
 \alias{st_crs}
-\alias{st_crs}
 \alias{st_crs.sf}
-\alias{st_crs}
 \alias{st_crs.numeric}
-\alias{st_crs}
 \alias{st_crs.character}
-\alias{st_crs}
 \alias{st_crs.sfc}
-\alias{st_crs}
 \alias{st_crs.bbox}
-\alias{st_crs}
+\alias{st_crs.CRS}
 \alias{st_crs.crs}
-\alias{st_crs}
 \alias{st_crs<-}
-\alias{st_crs}
 \alias{st_crs<-.sf}
-\alias{st_crs}
 \alias{st_crs<-.sfc}
-\alias{st_crs}
 \alias{st_set_crs}
-\alias{st_crs}
 \alias{NA_crs_}
-\alias{st_crs}
 \alias{is.na.crs}
-\alias{st_crs}
 \alias{$.crs}
 \title{Retrieve coordinate reference system from object}
 \format{An object of class \code{crs} of length 2.}
@@ -36,13 +24,15 @@ st_crs(x, ...)
 
 \method{st_crs}{sf}(x, ...)
 
-\method{st_crs}{numeric}(x, ...)
+\method{st_crs}{numeric}(x, proj4text = "", valid = TRUE, ...)
 
 \method{st_crs}{character}(x, ..., wkt)
 
 \method{st_crs}{sfc}(x, ..., parameters = FALSE)
 
 \method{st_crs}{bbox}(x, ...)
+
+\method{st_crs}{CRS}(x, ...)
 
 \method{st_crs}{crs}(x, ...)
 
@@ -64,6 +54,12 @@ NA_crs_
 \item{x}{numeric, character, or object of class \link{sf} or \link{sfc}}
 
 \item{...}{ignored}
+
+\item{proj4text}{character. Must be used in conjunction with \code{valid = FALSE}.}
+
+\item{valid}{default TRUE. This allows to create crs without checking against
+the local proj4 database. It can be used to synchronize crs with a remote
+database, but avoid it as much as possible.}
 
 \item{wkt}{character well-known-text representation of the crs}
 
@@ -117,7 +113,7 @@ x = sfc \%>\% st_set_crs(4326) \%>\% st_transform(3857)
 x
 st_crs("+init=epsg:3857")$epsg
 st_crs("+init=epsg:3857")$proj4string
-st_crs("+init=epsg:3857 +units=km")$b     # numeric
-st_crs("+init=epsg:3857 +units=km")$units # character
+st_crs("+init=epsg:3857 +units=m")$b     # numeric
+st_crs("+init=epsg:3857 +units=m")$units # character
 }
 \keyword{datasets}

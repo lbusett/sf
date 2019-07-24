@@ -69,7 +69,11 @@ prnt.GEOMETRYCOLLECTION = function(x, ..., EWKT = TRUE) {
 #' @param x object of class \code{sfg}, \code{sfc} or \code{crs}
 #' @param ... modifiers; in particular \code{digits} can be passed to control the number of digits used
 #' @name st_as_text
-#' @details To suppress printing of SRID, \code{EWKT=FALSE} can be passed as parameter.
+#' @details The returned WKT representation of simple feature geometry conforms to the
+#' \href{http://www.opengeospatial.org/standards/sfa}{simple features access} specification and extensions,
+#' \href{http://postgis.net/docs/using_postgis_dbmanagement.html#EWKB_EWKT}{known as EWKT}, supported by
+#' PostGIS and other simple features implementations for addition of SRID to a WKT string.
+#'
 #' @export
 st_as_text = function(x, ...) UseMethod("st_as_text")
 
@@ -77,8 +81,12 @@ st_as_text = function(x, ...) UseMethod("st_as_text")
 #' @export
 #' @examples
 #' st_as_text(st_point(1:2))
+#' st_as_text(st_sfc(st_point(c(-90,40)), crs = 4326), EWKT = TRUE)
 st_as_text.sfg = function(x, ...) {
-	switch(class(x)[2],
+	if (Sys.getenv("LWGEOM_WKT") == "true" && requireNamespace("lwgeom", quietly = TRUE) && utils::packageVersion("lwgeom") >= "0.1-5")
+		lwgeom::st_astext(x, ...)
+	else 
+	  switch(class(x)[2],
 		POINT = prnt.POINT(x, ...),
 		MULTIPOINT =        prnt.MULTIPOINT(x, ...),
 		LINESTRING =        prnt.LINESTRING(x, ...),
@@ -103,12 +111,16 @@ st_as_text.sfg = function(x, ...) {
 #' @param EWKT logical; if TRUE, print SRID=xxx; before the WKT string if \code{epsg} is available
 #' @export
 st_as_text.sfc = function(x, ..., EWKT = FALSE) {
-	if (EWKT) {
-		epsg = attr(x, "crs")$epsg
-		if (!is.na(epsg) && epsg != 0)
-			x = lapply(x, function(sfg) structure(sfg, epsg = epsg))
+	if (Sys.getenv("LWGEOM_WKT") == "true" && requireNamespace("lwgeom", quietly = TRUE) && utils::packageVersion("lwgeom") >= "0.1-5")
+		lwgeom::st_astext(x, ..., EWKT = EWKT)
+	else {
+		if (EWKT) {
+			epsg = attr(x, "crs")$epsg
+			if (!is.na(epsg) && epsg != 0)
+				x = lapply(x, function(sfg) structure(sfg, epsg = epsg))
+		}
+		vapply(x, st_as_text, "", ..., EWKT = EWKT)
 	}
-	vapply(x, st_as_text, "", ..., EWKT = EWKT)
 }
 
 #' @name st_as_sfc

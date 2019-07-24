@@ -68,6 +68,8 @@ st_as_sf.Spatial = function(x, ...) {
 		warning("column \"geometry\" will be overwritten by geometry column")
 	if (! requireNamespace("sp", quietly = TRUE))
 		stop("package sp required, please install it first")
+	if (sp::gridded(x) && sp::fullgrid(x))
+		sp::fullgrid(x) = FALSE
 	df$geometry = st_as_sfc(sp::geometry(x), ...)
 	st_as_sf(df)
 }
@@ -85,7 +87,7 @@ st_as_sf.Spatial = function(x, ...) {
 st_as_sfc = function(x, ...) UseMethod("st_as_sfc")
 
 handle_bbox = function(sfc, sp) {
-	bb = structure(bb_wrap(as.vector(sp::bbox(sp))), class = "bbox")
+	bb = structure(bb_wrap(as.vector(sp::bbox(sp)[1:2,])), class = "bbox")
 	structure(sfc, "bbox" = bb)
 }
 
@@ -103,6 +105,7 @@ st_as_sfc.SpatialPoints = function(x, ..., precision = 0.0) {
 st_as_sfc.SpatialPixels = function(x, ..., precision = 0.0) {
 	handle_bbox(st_as_sfc(as(x, "SpatialPoints"), precision = precision), x)
 }
+
 
 #' @name st_as_sfc
 #' @export
@@ -183,30 +186,68 @@ setAs("sf", "Spatial", function(from) {
 #' @aliases coerce,sfc,Spatial-method
 setAs("sfc", "Spatial", function(from) as_Spatial(from))
 
-# setAs("sfg", "Spatial", function(from) as(st_sfc(from), "Spatial"))
-##  doesn't work for:
-## as(st_point(0:1), "Spatial")
+# create empy class
+setOldClass("XY")
+setAs("XY", "Spatial", function(from) as(st_sfc(from), "Spatial"))
 
-#' Methods to coerce simple feature geometries to corresponding \code{Spatial*} objects
+#' Methods to coerce simple features to `Spatial*` and `Spatial*DataFrame` objects
+#'
+#' [as_Spatial()] allows to convert `sf` and `sfc` to `Spatial*DataFrame` and
+#' `Spatial*` for `sp` compatibility. You can also use `as(x, "Spatial")` To transform
+#' `sp` objects to `sf` and `sfc` with `as(x, "sf")`.
 #' @rdname coerce-methods
-#' @param from object of class \code{sfc_POINT}, \code{sfc_MULTIPOINT}, \code{sfc_LINESTRING}, \code{sfc_MULTILINESTRING}, \code{sfc_POLYGON}, or \code{sfc_MULTIPOLYGON}.
-#' @param cast logical; if \code{TRUE}, \link{st_cast} \code{from} before converting, so that e.g. \code{GEOMETRY} objects with a mix of \code{POLYGON} and \code{MULTIPOLYGON} are cast to \code{MULTIPOLYGON}.
-#' @param IDs character vector with IDs for the \code{Spatial*} geometries
-#' @return geometry-only object deriving from \code{Spatial}, of the appropriate class
+#' @name as_Spatial
+#' @md
+#' @param from object of class `sf`, `sfc_POINT`, `sfc_MULTIPOINT`, `sfc_LINESTRING`,
+#' `sfc_MULTILINESTRING`, `sfc_POLYGON`, or `sfc_MULTIPOLYGON`.
+#' @param cast logical; if `TRUE`, [st_cast()] `from` before converting, so that e.g.
+#' `GEOMETRY` objects with a mix of `POLYGON` and `MULTIPOLYGON` are cast to `MULTIPOLYGON`.
+#' @param IDs character vector with IDs for the `Spatial*` geometries
+#' @details [sp][sp::sp] supports three dimensions for `POINT` and `MULTIPOINT` (`SpatialPoint*`).
+#' Other geometries must be two-dimensional (`XY`). Dimensions can be dropped using
+#' [st_zm()] with `what = "M"` or `what = "ZM"`.
+#'
+#' For converting simple features (i.e., \code{sf} objects) to their \code{Spatial} counterpart, use \code{as(obj, "Spatial")}
+#' @return geometry-only object deriving from `Spatial`, of the appropriate class
 #' @export
 #' @examples
-#' nc = st_read(system.file("shape/nc.shp", package="sf"))
-#' as_Spatial(st_geometry(nc[1,]))
+#' nc <- st_read(system.file("shape/nc.shp", package="sf"))
+#' # convert to SpatialPolygonsDataFrame
+#' spdf <- as_Spatial(nc)
+#' # identical to
+#' spdf <- as(nc, "Spatial")
+#' # convert to SpatialPolygons
+#' as(st_geometry(nc), "Spatial")
+#' # back to sf
+#' as(spdf, "sf")
 as_Spatial = function(from, cast = TRUE, IDs = paste0("ID", 1:length(from))) {
+	if (inherits(from, "sf")) {
+		geom = st_geometry(from)
+		from[[attr(from, "sf_column")]] = NULL # remove sf column list
+		sp::addAttrToGeom(as_Spatial(geom, cast = cast, IDs = row.names(from)),
+						  data.frame(from), match.ID = FALSE)
+	} else {
+		.as_Spatial(from, cast, IDs)
+	}
+}
+
+.as_Spatial = function(from, cast = TRUE, IDs = paste0("ID", 1:length(from))) {
 	if (cast)
 		from = st_cast(from)
 	zm = class(from[[1]])[1]
 	if (zm %in% c("XYM", "XYZM"))
-		stop("geometries containing M not supported by sp")
-	StopZ = function(zm) { if (zm %in% c("XYZ", "XYZM"))
-		stop("Z not supported: use st_zm first to drop Z?") }
+		stop("geometries containing M not supported by sp\n",
+			 'use `st_zm(..., what = "M")`')
+	if (any(st_is_empty(from)))
+		stop("empty geometries are not supported by sp classes: conversion failed")
+	StopZ = function(zm) { 
+		if (zm == "XYZ")
+			stop("sp supports Z dimension only for POINT and MULTIPOINT.\n",
+				 'use `st_zm(...)` to coerce to XY dimensions')
+	}
 	switch(class(from)[1],
 		"sfc_POINT" = sfc2SpatialPoints(from),
+#		"sfc_POINT" = sfc2SpatialPoints(from, IDs),
 		"sfc_MULTIPOINT" = sfc2SpatialMultiPoints(from),
 		"sfc_LINESTRING" = , "sfc_MULTILINESTRING" = { StopZ(zm); sfc2SpatialLines(from, IDs) },
 		"sfc_POLYGON" = , "sfc_MULTIPOLYGON" = { StopZ(zm); sfc2SpatialPolygons(from, IDs) },
@@ -214,9 +255,12 @@ as_Spatial = function(from, cast = TRUE, IDs = paste0("ID", 1:length(from))) {
 	)
 }
 
-sfc2SpatialPoints = function(from) {
+sfc2SpatialPoints = function(from, IDs) {
 	if (!requireNamespace("sp", quietly = TRUE))
 		stop("package sp required, please install it first")
+#	cc = do.call(rbind, from)
+#	row.names(cc) = IDs
+#	sp::SpatialPoints(cc, proj4string = sp::CRS(attr(from, "crs")$proj4string))
 	sp::SpatialPoints(do.call(rbind, from), proj4string = sp::CRS(attr(from, "crs")$proj4string))
 }
 

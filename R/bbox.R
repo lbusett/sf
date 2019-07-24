@@ -6,11 +6,11 @@ is.na.bbox = function(x) identical(x, NA_bbox_)
 
 bb_wrap = function(bb) {
 	stopifnot(is.numeric(bb) && length(bb) == 4)
-	structure(bb, names = c("xmin", "ymin", "xmax", "ymax"), class = "bbox")
+	structure(as.double(bb), names = c("xmin", "ymin", "xmax", "ymax"), class = "bbox")
 }
 
 bbox.Set = function(obj, ...) {
-	sel = vapply(obj, function(x) length(x) && !all(is.na(x)), TRUE)
+	sel = vapply(obj, function(x) { length(x) && !all(is.na(x)) }, TRUE)
 	if (! any(sel))
 		NA_bbox_
 	else
@@ -129,8 +129,8 @@ st_bbox.CIRCULARSTRING = function(obj, ...) {
 
 #' @export
 print.bbox = function(x, ...) {
-	attr(x, "crs") = NULL
-	print(unclass(x))
+	x = structure(x, crs = NULL, class = NULL)
+	print(set_units(x, attr(x, "units"), mode = "standard"))
 }
 
 compute_bbox = function(obj) {
@@ -176,13 +176,25 @@ st_bbox.Raster = function(obj, ...) {
 }
 
 #' @name st_bbox
+#' @export
+st_bbox.Extent = function(obj, ..., crs = NA_crs_) {
+	if (!requireNamespace("raster", quietly = TRUE))
+		stop("package raster required, please install it first")
+	structure(bb_wrap(c(obj@xmin, obj@ymin, obj@xmax, obj@ymax)), crs = st_crs(crs))
+}
+
+#' @name st_bbox
 #' @param crs object of class \code{crs}, or argument to \link{st_crs}, specifying the CRS of this bounding box.
 #' @examples
 #' st_bbox(c(xmin = 16.1, xmax = 16.6, ymax = 48.6, ymin = 47.9), crs = st_crs(4326))
 #' @export
 st_bbox.numeric = function(obj, ..., crs = NA_crs_) {
-	structure(bb_wrap(c(obj["xmin"], obj["ymin"], obj["xmax"], obj["ymax"])), crs = st_crs(crs))
+	structure(bb_wrap(obj[c("xmin", "ymin", "xmax", "ymax")]), crs = st_crs(crs))
 }
+
+#' @export
+st_bbox.bbox = function(obj, ...) obj
+
 
 #' @export
 "$.bbox" = function(x, name) {

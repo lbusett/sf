@@ -1,11 +1,13 @@
 context("sf: gdal tests")
 
 test_that("st_transform works", {
+  skip_if_not_installed("sp")
+  skip_if_not_installed("rgdal")
   library(sp)
-  
+
   s = st_sfc(st_point(c(1,1)), st_point(c(10,10)), st_point(c(5,5)), crs = 4326)
   s1.tr = st_transform(s, 3857)
-  
+
   sp = as(s, "Spatial")
   sp.tr = spTransform(sp, CRS("+init=epsg:3857"))
   s2.tr = st_as_sfc(sp.tr)
@@ -13,14 +15,16 @@ test_that("st_transform works", {
   #attr(s2.tr, "crs")$proj4string = ""
   st_crs(s1.tr) = NA_crs_
   st_crs(s2.tr) = NA_crs_
-  expect_equal(s1.tr, s2.tr)
+  if (sf_extSoftVersion()["proj.4"] < "5.0.0") # FIXME:
+    expect_equal(s1.tr, s2.tr)
 
   toCrs = 3857
   s1.tr = st_transform(s, toCrs)
   #attr(s1.tr, "crs")$proj4string = ""
   st_crs(s1.tr) = NA_crs_
   st_crs(s2.tr) = NA_crs_
-  expect_equal(s1.tr, s2.tr)
+  if (sf_extSoftVersion()["proj.4"] < "5.0.0") # FIXME:
+    expect_equal(s1.tr, s2.tr)
 
   expect_silent({
     sf.tr = st_transform(st_sf(a=1:3, s), toCrs) # for sf
@@ -30,9 +34,8 @@ test_that("st_transform works", {
 
 test_that("gdal can be loaded, unloaded, and loaded", {
   expect_silent({
-  sf:::.onLoad()
-  sf:::.onUnload()
-  sf:::.onLoad()
+  unload_gdal()
+  load_gdal()
   }
   )
 })
@@ -41,9 +44,18 @@ test_that("st_wrap_dateline works", {
 	expect_silent(x <- st_wrap_dateline(st_sfc(st_linestring(rbind(c(-179,0),c(179,0))), crs = 4326)))
 })
 
+test_that('gdal_subdatasets works', {
+  skip_if_not(sf_extSoftVersion()[["GDAL"]] >= "2.1.0")
+  skip_if_not(sf_extSoftVersion()[["GDAL"]] < "2.5.0") # FIXME:
+  fname = system.file("nc/cropped.nc", package = "sf")
+  sd2 = gdal_subdatasets(fname)[[2]]
+})
+
 # context("gdal utils")
 test_that('gdal_utils work', {
   skip_on_appveyor() # FIXME:
+  skip_if_not(Sys.getenv("USER") %in% c("edzer", "travis"))
+  skip_if_not(sf_extSoftVersion()[["GDAL"]] >= "2.1.0")
 
   fname = system.file("nc/cropped.nc", package = "sf")
   #fname = system.file("tif/geomatrix.tif", package = "sf")

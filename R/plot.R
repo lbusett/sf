@@ -1,133 +1,148 @@
+#' plot sf object
+#'
+#' plot one or more attributes of an sf object on a map
 #' Plot sf object
 #'
 #' @param x object of class sf
 #' @param y ignored
-#' @param ... further specifications, see \link{plot_sf} and \link{plot}
+#' @param ... further specifications, see \link{plot_sf} and \link{plot} and details.
 #' @param main title for plot (\code{NULL} to remove)
-#' @param pal palette function, similar to \link[grDevices]{rainbow}; if omitted, \link{sf.colors} is used
+#' @param pal palette function, similar to \link[grDevices]{rainbow}, or palette values; if omitted, \link{sf.colors} is used
 #' @param nbreaks number of colors breaks (ignored for \code{factor} or \code{character} variables)
 #' @param breaks either a numeric vector with the actual breaks, or a name of a method accepted by the \code{style} argument of \link[classInt]{classIntervals}
 #' @param max.plot integer; lower boundary to maximum number of attributes to plot; the default value (9) can be overriden by setting the global option \code{sf_max.plot}, e.g. \code{options(sf_max.plot=2)}
-#' @param key.pos integer; side to plot a color key: 1 bottom, 2 left, 3 top, 4 right; set to \code{NULL} to omit key. Ignored if multiple columns are plotted in a single function call. Default depends on plot size, map aspect, and, if set, parameter \code{asp}.
-#' @param key.size amount of space reserved for the key (labels)
+#' @param key.pos integer; side to plot a color key: 1 bottom, 2 left, 3 top, 4 right; set to \code{NULL} to omit key, or -1 to select automatically. If multiple columns are plotted in a single function call by default no key is plotted and every submap is stretched individually; if a key is requested (and \code{col} is missing) all maps are colored according to a single key. Auto select depends on plot size, map aspect, and, if set, parameter \code{asp}.
+#' @param key.width amount of space reserved for the key (incl. labels), thickness/width of the scale bar
+#' @param key.length amount of space reserved for the key along its axis, length of the scale bar
 #' @param pch plotting symbol
 #' @param cex symbol size
 #' @param bg symbol background color
 #' @param lty line type
 #' @param lwd line width
-#' @param col color
-#' @param border color of polygon border
-#' @param add logical; add to current plot?
+#' @param col color for plotting features; if \code{length(col)} does not equal 1 or \code{nrow(x)}, a warning is emitted that colors will be recycled. Specifying \code{col} suppresses plotting the legend key.
+#' @param border color of polygon border(s)
+#' @param add logical; add to current plot? Note that when using \code{add=TRUE}, you may have to set \code{reset=FALSE} in the first plot command.
 #' @param type plot type: 'p' for points, 'l' for lines, 'b' for both
 #' @param reset logical; if \code{FALSE}, keep the plot in a mode that allows adding further map elements; if \code{TRUE} restore original mode after plotting; see details.
+#' @param logz logical; if \code{TRUE}, use log10-scale for the attribute variable. In that case, \code{breaks} and \code{at} need to be given as log10-values; see examples.
 #' @method plot sf
 #' @name plot
 #' @details \code{plot.sf} maximally plots \code{max.plot} maps with colors following from attribute columns,
-#' one map per attribute. It uses \code{sf.colors} for default colors. For more control over individual maps,
-#' set parameter \code{mfrow} with \code{par} prior to plotting,  and plot single maps one by one.
+#' one map per attribute. It uses \code{sf.colors} for default colors. For more control over placement of individual maps,
+#' set parameter \code{mfrow} with \link{par} prior to plotting, and plot single maps one by one; note that this only works
+#' in combination with setting parameters \code{key.pos=NULL} (no legend) and \code{reset=FALSE}.
 #'
 #' \code{plot.sfc} plots the geometry, additional parameters can be passed on
 #' to control color, lines or symbols.
 #'
 #' When setting \code{reset} to \code{FALSE}, the original device parameters are lost, and the device must be reset using \code{dev.off()} in order to reset it.
+#' 
+#' parameter \code{at} can be set to specify where labels are placed along the key; see examples.
 #'
 #' @examples
-#' # plot linestrings:
-#' l1 = st_linestring(matrix(runif(6)-0.5,,2))
-#' l2 = st_linestring(matrix(runif(6)-0.5,,2))
-#' l3 = st_linestring(matrix(runif(6)-0.5,,2))
-#' s = st_sf(a=2:4, b=st_sfc(l1,l2,l3))
-#' plot(s, col = s$a, axes = FALSE)
-#' plot(s, col = s$a)
-#' ll = "+init=epsg:4326 +proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
-#' st_crs(s) = ll
-#' plot(s, col = s$a, axes = TRUE)
-#' plot(s, col = s$a, lty = s$a, lwd = s$a, pch = s$a, type = 'b')
-#' l4 = st_linestring(matrix(runif(6),,2))
-#' plot(st_sf(a=1,b=st_sfc(l4)), add = TRUE)
-#' # plot multilinestrings:
-#' ml1 = st_multilinestring(list(l1, l2))
-#' ml2 = st_multilinestring(list(l3, l4))
-#' ml = st_sf(a = 2:3, b = st_sfc(ml1, ml2))
-#' plot(ml, col = ml$a, lty = ml$a, lwd = ml$a, pch = ml$a, type = 'b')
-#' # plot points:
-#' p1 = st_point(c(1,2))
-#' p2 = st_point(c(3,3))
-#' p3 = st_point(c(3,0))
-#' p = st_sf(a=2:4, b=st_sfc(p1,p2,p3))
-#' plot(p, col = s$a, axes = TRUE)
-#' plot(p, col = s$a)
-#' plot(p, col = p$a, pch = p$a, cex = p$a, bg = s$a, lwd = 2, lty = 2, type = 'b')
-#' p4 = st_point(c(2,2))
-#' plot(st_sf(a=1, st_sfc(p4)), add = TRUE)
-#' # multipoints:
-#' mp1 = st_multipoint(matrix(1:4,2))
-#' mp2 = st_multipoint(matrix(5:8,2))
-#' mp = st_sf(a = 2:3, b = st_sfc(mp1, mp2))
-#' plot(mp)
-#' plot(mp, col = mp$a, pch = mp$a, cex = mp$a, bg = mp$a, lwd = mp$a, lty = mp$a, type = 'b')
-#' # polygon:
-#' outer = matrix(c(0,0,10,0,10,10,0,10,0,0),ncol=2, byrow=TRUE)
-#' hole1 = matrix(c(1,1,1,2,2,2,2,1,1,1),ncol=2, byrow=TRUE)
-#' hole2 = matrix(c(5,5,5,6,6,6,6,5,5,5),ncol=2, byrow=TRUE)
-#' pl1 = st_polygon(list(outer, hole1, hole2))
-#' pl2 = st_polygon(list(outer+10, hole1+10, hole2+10))
-#' po = st_sf(a = 2:3, st_sfc(pl1,pl2))
-#' plot(po, col = po$a, border = rev(po$a), lwd=3)
-#' # multipolygon
-#' r10 = matrix(rep(c(0,10),each=5),5)
-#' pl1 = list(outer, hole1, hole2)
-#' pl2 = list(outer+10, hole1+10, hole2+10)
-#' pl3 = list(outer+r10, hole1+r10, hole2+r10)
-#' mpo1 = st_multipolygon(list(pl1,pl2))
-#' mpo2 = st_multipolygon(list(pl3))
-#' mpo = st_sf(a=2:3, b=st_sfc(mpo1,mpo2))
-#' plot(mpo, col = mpo$a, border = rev(mpo$a), lwd = 2)
-#' # geometrycollection:
-#' gc1 = st_geometrycollection(list(mpo1, st_point(c(21,21)), l1 * 2 + 21))
-#' gc2 = st_geometrycollection(list(mpo2, l2 - 2, l3 - 2, st_point(c(-1,-1))))
-#' gc = st_sf(a=2:3, b = st_sfc(gc1,gc2))
-#' plot(gc, cex = gc$a, col = gc$a, border = rev(gc$a) + 2, lwd = 2)
+#' nc = st_read(system.file("gpkg/nc.gpkg", package="sf"), quiet = TRUE)
+#' # plot single attribute, auto-legend:
+#' plot(nc["SID74"])
+#' # plot multiple:
+#' plot(nc[c("SID74", "SID79")]) # better use ggplot2::geom_sf to facet and get a single legend!
+#' # adding to a plot of an sf object only works when using reset=FALSE in the first plot:
+#' plot(nc["SID74"], reset = FALSE)
+#' plot(st_centroid(st_geometry(nc)), add = TRUE)
+#' # log10 z-scale:
+#' plot(nc["SID74"], logz = TRUE, breaks = c(0,.5,1,1.5,2), at = c(0,.5,1,1.5,2))
+#' # and we need to reset the plotting device after that, e.g. by
+#' layout(1)
+#' # when plotting only geometries, the reset=FALSE is not needed:
+#' plot(st_geometry(nc))
+#' plot(st_geometry(nc)[1], col = 'red', add = TRUE)
+#' # add a custom legend to an arbitray plot:
+#' layout(matrix(1:2, ncol = 2), widths = c(1, lcm(2)))
+#' plot(1)
+#' .image_scale(1:10, col = sf.colors(9), key.length = lcm(8), key.pos = 4, at = 1:10)
 #' @export
-plot.sf <- function(x, y, ..., col = NULL, main, pal = NULL, nbreaks = 10, breaks = "pretty",
+plot.sf <- function(x, y, ..., main, pal = NULL, nbreaks = 10, breaks = "pretty",
 		max.plot = if(is.null(n <- options("sf_max.plot")[[1]])) 9 else n,
-		key.pos = get_key_pos(x, ...), key.size = lcm(1.8), reset = TRUE) {
+		key.pos = get_key_pos(x, ...), key.length = .618, key.width = lcm(1.8), 
+		reset = TRUE, logz = FALSE) {
 
 	stopifnot(missing(y))
 	nbreaks.missing = missing(nbreaks)
 	key.pos.missing = missing(key.pos)
+	max_plot_missing = missing(max.plot)
 	dots = list(...)
+	col_missing = is.null(dots$col)
 
+	opar = par()
 	if (ncol(x) > 2 && !isTRUE(dots$add)) { # multiple maps to plot...
-		max_plot_missing = missing(max.plot)
 		cols = setdiff(names(x), attr(x, "sf_column"))
-		mfrow = get_mfrow(st_bbox(x), min(max.plot, length(cols)), par("din"))
-		opar = if (isTRUE(dots$axes))
-				par(mfrow = mfrow, mar = c(2.1, 2.1, 1.2, 0))
-			else
-				par(mfrow = mfrow, mar = c(0,0,1.2,0))
-		on.exit(par(opar))
+		lt = .get_layout(st_bbox(x), min(max.plot, length(cols)), par("din"), key.pos, key.width)
+		key.pos = lt$key.pos
+		layout(lt$m, widths = lt$widths, heights = lt$heights, respect = FALSE)
+
+		if (isTRUE(dots$axes))
+			par(mar = c(2.1, 2.1, 1.2, 0))
+		else
+			par(mar = c(0, 0, 1.2, 0))
 
 		if (max_plot_missing)
-			max.plot = prod(mfrow)
+			max.plot = prod(lt$mfrow)
 
-		if (isTRUE(is.finite(max.plot)) && ncol(x) - 1 > max.plot) {
-			if (max_plot_missing && is.null(options("sf_max.plot")[[1]]))
-				warning(paste("plotting the first", max.plot, "out of", ncol(x)-1,
-					"attributes; use max.plot =", ncol(x) - 1, "to plot all"), call. = FALSE)
-		}
+		if (isTRUE(is.finite(max.plot)) && ncol(x) - 1 > max.plot &&
+				max_plot_missing && is.null(options("sf_max.plot")[[1]]))
+			warning(paste("plotting the first", max.plot, "out of", ncol(x)-1,
+				"attributes; use max.plot =", ncol(x) - 1, "to plot all"), call. = FALSE)
+
 		# col selection may have changed; set cols again:
 		cols = setdiff(names(x), attr(x, "sf_column"))
 		if (length(cols) > max.plot)
 			cols = cols[1:max.plot]
+
+		if (!is.null(key.pos)) {
+			values = as.numeric(as.matrix(as.data.frame(x)[cols])) # will kill factors, and also units
+			if (logz)
+				values = log10(values)
+			if (is.character(breaks)) { # compute breaks from values:
+				v0 = na.omit(as.numeric(values))
+				n.unq = length(unique(v0))
+				breaks = if (! all(is.na(values)) && n.unq > 1)
+						classInt::classIntervals(v0, min(nbreaks, n.unq), 
+							breaks, warnSmallN = FALSE)$brks
+					else
+						range(values, na.rm = TRUE) # lowest and highest!
+				if (inherits(values, "POSIXct"))
+					breaks = as.POSIXct(breaks, origin = as.POSIXct("1970-01-01"))
+				nbreaks = length(breaks) - 1
+			}
+		}
+
 		# loop over each map to plot:
-		invisible(lapply(cols, function(cname) plot(x[, cname], main = cname, col = col,
-			pal = pal, nbreaks = nbreaks, breaks = breaks, key.pos = NULL, reset = FALSE, ...)))
+		lapply(cols, function(cname) plot(x[, cname], main = cname,
+			pal = pal, nbreaks = nbreaks, breaks = breaks, key.pos = NULL, reset = FALSE, 
+			logz = logz, ...))
+
+		for (i in seq_len(prod(lt$mfrow) - length(cols))) # empty panels:
+			plot.new()
+
+		# plot key?
+		if (!is.null(key.pos) && col_missing) {
+			if (is.null(pal))
+				pal = function(n) sf.colors(n, categorical = is.factor(values))
+			colors = if (is.function(pal))
+					pal(nbreaks)
+				else
+					pal
+			if (is.factor(values))
+				.image_scale_factor(levels(values), colors, key.pos = key.pos,
+					key.width = key.width, key.length = key.length, ...)
+			else
+				.image_scale(values, colors, breaks = breaks, key.pos = key.pos, 
+					key.length = key.length, logz = logz, ...)
+		}
+
 	} else { # single map, or dots$add=TRUE:
-		opar = par()
 		if (!identical(TRUE, dots$add) && reset)
 			layout(matrix(1)) # reset
-		if (is.null(col) && ncol(x) == 1) # no colors, no attributes to choose colors from: plot geometry
+		if (ncol(x) == 1) # no attributes to choose colors from: plot geometry
 			plot(st_geometry(x), ...)
 		else { # generate plot with colors and possibly key
 			if (ncol(x) > 2) { # add = TRUE
@@ -140,18 +155,20 @@ plot.sf <- function(x, y, ..., col = NULL, main, pal = NULL, nbreaks = 10, break
 			if (is.list(values))
 				stop("plotting list-columns not supported") # nocov
 
-			if (inherits(values, "POSIXt"))
-				values = as.numeric(values)
+#			if (inherits(values, "POSIXt"))
+#				values = as.numeric(values)
 
 			if (is.character(values))
 				values = as.factor(values)
+			else if (logz)
+				values = log10(as.numeric(values))
 
 			if (is.null(pal))
 				pal = function(n) sf.colors(n, categorical = is.factor(values))
-			else if (! is.null(col))
+			else if (! col_missing)
 				stop("specify only one of col and pal")
 
-			if (is.null(col)) { # compute colors from values:
+			if (col_missing) { # compute colors from values:
 				col = if (is.factor(values)) {
 						if (key.pos.missing && nlevels(values) > 30) # doesn't make sense:
 							key.pos = NULL
@@ -161,20 +178,23 @@ plot.sf <- function(x, y, ..., col = NULL, main, pal = NULL, nbreaks = 10, break
 								pal
 						colors[as.numeric(values)]
 					} else {
-						values = as.numeric(values) # drop units, if any
+						if (! inherits(values, "POSIXt"))
+							values = as.numeric(values) # drop units, if any
 						if (is.character(breaks)) { # compute breaks from values:
-							n.unq = length(unique(na.omit(values)))
-							breaks = if (! all(is.na(values)) && n.unq > 1) {
-								if (utils::packageVersion("classInt") > "0.2-1")
-									classInt::classIntervals(na.omit(values), min(nbreaks, n.unq), breaks, warnSmallN = FALSE)$brks
-								else
-									classInt::classIntervals(na.omit(values), min(nbreaks, n.unq), breaks)$brks
-							} else
+							v0 = na.omit(as.numeric(values))
+							n.unq = length(unique(v0))
+							breaks = if (! all(is.na(values)) && n.unq > 1)
+								classInt::classIntervals(v0, min(nbreaks, n.unq),
+									breaks, warnSmallN = FALSE)$brks
+							else
 								range(values, na.rm = TRUE) # lowest and highest!
+							if (inherits(values, "POSIXt"))
+								breaks = as.POSIXct(breaks, origin = as.POSIXct("1970-01-01"))
 						}
 						# this is necessary if breaks were specified either as character or as numeric
 						# "pretty" takes nbreaks as advice only:
 						nbreaks = length(breaks) - 1
+
 						cuts = if (all(is.na(values)))
 								rep(NA_integer_, length(values))
 							else if (diff(range(values, na.rm = TRUE)) == 0)
@@ -188,37 +208,43 @@ plot.sf <- function(x, y, ..., col = NULL, main, pal = NULL, nbreaks = 10, break
 						colors[cuts]
 					}
 			} else {
-				if (is.factor(values)) {
-					which.first = function(x) which(x)[1]
-					fnum = as.numeric(values)
-					colors = col[ sapply(unique(fnum), function(i) which.first(i == fnum)) ]
-					if (key.pos.missing && nlevels(values) > 30) # doesn't make sense:
-						key.pos = NULL
-				} else # no key:
-					key.pos = NULL
+				col = dots$col
+				if (length(col) != 1 && length(col) != nrow(x))
+					warning("col is not of length 1 or nrow(x): colors will be recycled; use pal to specify a color palette")
+				key.pos = NULL # no key!
 			}
 
-			if (! isTRUE(dots$add) && ! is.null(key.pos) && !all(is.na(values)) &&
+			if (!isTRUE(dots$add) && !is.null(key.pos) && !all(is.na(values)) &&
 					(is.factor(values) || length(unique(na.omit(values))) > 1) &&
 					length(col) > 1) { # plot key?
+
 				switch(key.pos,
-					layout(matrix(c(2,1), nrow = 2, ncol = 1), widths = 1, heights = c(1, key.size)),  # 1 bottom
-					layout(matrix(c(1,2), nrow = 1, ncol = 2), widths = c(key.size, 1), heights = 1),  # 2 left
-					layout(matrix(c(1,2), nrow = 2, ncol = 1), widths = 1, heights = c(key.size, 1)),  # 3 top
-					layout(matrix(c(2,1), nrow = 1, ncol = 2), widths = c(1, key.size), heights = 1)   # 4 right
+					layout(matrix(c(2,1), nrow = 2, ncol = 1),
+						widths = 1, heights = c(1, key.width)), # 1 bottom
+					layout(matrix(c(1,2), nrow = 1, ncol = 2),
+						widths = c(key.width, 1), heights = 1), # 2 left
+					layout(matrix(c(1,2), nrow = 2, ncol = 1),
+						widths = 1, heights = c(key.width, 1)), # 3 top
+					layout(matrix(c(2,1), nrow = 1, ncol = 2),
+						widths = c(1, key.width), heights = 1)  # 4 right
 				)
+
 				if (is.factor(values)) {
-					image.scale.factor(levels(values), colors, key.pos = key.pos,
-						axes = isTRUE(dots$axes), key.size = key.size)
+					.image_scale_factor(levels(values), colors, key.pos = key.pos,
+						key.width = key.width, key.length = key.length, ...)
 				} else
-					image.scale(values, colors, breaks = breaks, key.pos = key.pos, axes = isTRUE(dots$axes))
+					.image_scale(values, colors, breaks = breaks, key.pos = key.pos, 
+						key.length = key.length, logz = logz, ...)
 			}
 			# plot the map:
 			mar = c(1, 1, 1.2, 1)
 			if (isTRUE(dots$axes))
 				mar[1:2] = 2.1
 			par(mar = mar)
-			plot(st_geometry(x), col = col, ...)
+			if (col_missing)
+				plot(st_geometry(x), col = col, ...)
+			else
+				plot(st_geometry(x), ...)
 		}
 		if (! isTRUE(dots$add)) { # title?
 			if (missing(main)) {
@@ -226,19 +252,25 @@ plot.sf <- function(x, y, ..., col = NULL, main, pal = NULL, nbreaks = 10, break
 				if (length(main) && inherits(x[[main]], "units"))
 					main = make_unit_label(main, x[[main]])
 			}
-			title(main)
+			localTitle <- function(..., col, bg, pch, cex, lty, lwd, axes, type, bgMap, 
+					border, graticule, xlim, ylim, asp, bgc, xaxs, yaxs, lab, setParUsrBB, 
+					expandBB, col_graticule, at, lon, lat, crs, datum, ndiscr, margin) # absorb
+				title(...)
+			localTitle(main, ...)
 		}
-		if (reset) {
-			layout(matrix(1)) # reset
-			desel = which(names(opar) %in% c("cin", "cra", "csi", "cxy", "din", "page"))
-			par(opar[-desel])
-		}
+	}
+	if (!isTRUE(dots$add) && reset) { # reset device:
+		layout(matrix(1))
+		desel = which(names(opar) %in% c("cin", "cra", "csi", "cxy", "din", "page", "fig"))
+		par(opar[-desel])
 	}
 }
 
+#' @name plot
+#' @export
 get_key_pos = function(x, ...) {
 	bb = st_bbox(x)
-	if (ncol(x) > 2 || any(is.na(bb)))
+	if (any(is.na(bb)) || (inherits(x, "sf") && ncol(x) > 2))
 		NULL
 	else {
 		pin = par("pin") # (width, height)
@@ -248,9 +280,9 @@ get_key_pos = function(x, ...) {
 		if (is.null(asp))
 			asp <- ifelse(isTRUE(st_is_longlat(x)), 1/cos((mean(bb[c(2,4)]) * pi)/180), 1.0)
 		asp_box = asp_box * asp
-		if (asp_box < asp_plt | !is.finite(asp_box)) # wider
+		if (!is.finite(asp_box) || asp_box < asp_plt) # plot is wider than device: below
 			1
-		else # taller
+		else # plot is taller than device: to the right
 			4
 	}
 }
@@ -268,9 +300,9 @@ plot.sfc_POINT = function(x, y, ..., pch = 1, cex = 1, col = 1, bg = 0, lwd = 1,
 	col = rep(col, length.out = npts)
 	bg = rep(bg, length.out = npts)
 	cex = rep(cex, length.out = npts)
-	mat = do.call(rbind, x)
+	mat = t(matrix(unlist(x, use.names = FALSE), ncol = length(x))) #933
 	if (!is.null(mat)) {
-		ne = apply(mat, 1, function(x) all(is.finite(x))) # ne: not empty
+		ne = !is.na(rowMeans(mat))  ## faster than apply; #933
 		points(mat[ne,, drop = FALSE], pch = pch[ne], col = col[ne], bg = bg[ne],
 			cex = cex[ne], lwd = lwd, lty = lty, type = type)
 	}
@@ -455,7 +487,7 @@ plot.sfc_GEOMETRYCOLLECTION = function(x, y, ..., pch = 1, cex = 1, bg = 0, lty 
 #' @method plot sfc_GEOMETRY
 #' @export
 plot.sfc_GEOMETRY = function(x, y, ..., pch = 1, cex = 1, bg = 0, lty = 1, lwd = 1,
-	col = 1, border = 1, add = FALSE) {
+	col = ifelse(st_dimension(x) == 2, NA, 1), border = 1, add = FALSE) {
 	stopifnot(missing(y))
 	if (! add)
 		plot_sf(x, ...)
@@ -503,13 +535,13 @@ plot.sfg = function(x, ...) {
 #'
 #' The default aspect for map plots is 1; if however data are not
 #' projected (coordinates are long/lat), the aspect is by default set to
-#' 1/cos(My * pi)/180) with My the y coordinate of the middle of the map
+#' 1/cos(My * pi/180) with My the y coordinate of the middle of the map
 #' (the mean of \code{ylim}, which defaults to the y range of bounding box). This
 #' implies an \href{https://en.wikipedia.org/wiki/Equirectangular_projection}{Equirectangular projection}.
 #'
 plot_sf = function(x, xlim = NULL, ylim = NULL, asp = NA, axes = FALSE, bgc = par("bg"), ...,
     xaxs, yaxs, lab, setParUsrBB = FALSE, bgMap = NULL, expandBB = c(0,0,0,0), graticule = NA_crs_,
-	col_graticule = 'grey') {
+	col_graticule = 'grey', border) {
 
 # sp's bbox: matrix
 #   min max
@@ -541,7 +573,7 @@ plot_sf = function(x, xlim = NULL, ylim = NULL, asp = NA, axes = FALSE, bgc = pa
 	pl_reg <- par("usr")
 	rect(xleft = pl_reg[1], ybottom = pl_reg[3], xright = pl_reg[2],
 		ytop = pl_reg[4], col = bgc, border = FALSE)
-	linAxis = function(side, ..., lon, lat, ndiscr, reset) axis(side = side, ...)
+	linAxis = function(side, ..., lon, lat, ndiscr, reset, at) axis(side = side, ...)
 	if (! missing(graticule)) {
 		g = if (isTRUE(graticule))
 				st_graticule(pl_reg[c(1,3,2,4)], st_crs(x), st_crs(4326), ...)
@@ -560,8 +592,9 @@ plot_sf = function(x, xlim = NULL, ylim = NULL, asp = NA, axes = FALSE, bgc = pa
 	} else if (axes) {
 		box()
 		if (isTRUE(st_is_longlat(x))) {
-			degAxis(1, ...)
-			degAxis(2, ...)
+			local_degAxis = function(side, ..., at) .degAxis(side, ...) # absorb at
+			local_degAxis(1, ...)
+			local_degAxis(2, ...)
 		} else {
 			linAxis(1, ...)
 			linAxis(2, ...)
@@ -588,9 +621,6 @@ plot_sf = function(x, xlim = NULL, ylim = NULL, asp = NA, axes = FALSE, bgc = pa
 }
 
 
-#' blue-pink-yellow color scale
-#'
-#' blue-pink-yellow color scale
 #' @param n integer; number of colors
 #' @param cutoff.tails numeric, in [0,0.5] start and end values
 #' @param alpha numeric, in [0,1], transparency
@@ -622,24 +652,62 @@ sf.colors = function (n = 10, cutoff.tails = c(0.35, 0.2), alpha = 1, categorica
 	}
 }
 
-get_mfrow = function(bb, n, total_size = c(1,1)) {
-	asp = diff(bb[c(1,3)])/diff(bb[c(2,4)])
+#' @export
+#' @name stars
+#' @param bb ignore
+#' @param n ignore
+#' @param total_size ignore
+#' @param key.length ignore
+.get_layout = function(bb, n, total_size, key.pos, key.length) {
+# return list with "m" matrix, "key.pos", "widths" and "heights" fields
+# if key.pos = -1, it will be a return value, "optimally" placed
+	asp = diff(bb[c(2,4)])/diff(bb[c(1,3)])
+	if (isTRUE(st_is_longlat(bb)))
+		asp = asp / cos(mean(bb[c(2,4)]) * pi /180)
 	size = function(nrow, n, asp) {
 		ncol = ceiling(n / nrow)
 		xsize = total_size[1] / ncol
-		ysize = xsize  / asp
+		ysize = xsize  * asp
 		if (xsize * ysize * n > prod(total_size)) {
 			ysize = total_size[2] / nrow
-			xsize = ysize * asp
+			xsize = ysize / asp
 		}
 		xsize * ysize
 	}
 	sz = vapply(1:n, function(x) size(x, n, asp), 0.0)
 	nrow = which.max(sz)
 	ncol = ceiling(n / nrow)
-	structure(c(nrow, ncol), names = c("nrow", "ncol"))
-}
 
+	ret = list()
+	ret$mfrow = c(nrow, ncol)
+
+	# the following is right now only used by stars; FIXME:
+	# nocov start
+	ret$key.pos = if (!is.null(key.pos) && key.pos == -1L) { # figure out here: right or bottom?
+			newasp = asp * ncol / nrow # of the composition
+			dispasp = total_size[1] / total_size[2]
+			ifelse(newasp > dispasp, 1, 4) # > or < ? oh dear,
+		} else
+			key.pos
+
+	m = matrix(1 : (nrow * ncol), nrow, ncol, byrow = TRUE)
+	if (!is.null(ret$key.pos) && ret$key.pos != 0) {
+		k = key.length
+		n = nrow * ncol + 1
+		switch(ret$key.pos,
+			{ ret$m = rbind(m, n); ret$widths = c(rep(1, ncol)); ret$heights = c(rep(1, nrow), k) },
+			{ ret$m = cbind(n, m); ret$widths = c(k, rep(1, ncol)); ret$heights = c(rep(1, nrow)) },
+			{ ret$m = rbind(n, m); ret$widths = c(rep(1, ncol)); ret$heights = c(k, rep(1, nrow)) },
+			{ ret$m = cbind(m, n); ret$widths = c(rep(1, ncol), k); ret$heights = c(rep(1, nrow)) }
+		)
+	} else {
+		ret$m = m
+		ret$widths = rep(1, ncol)
+		ret$heights = rep(1, nrow)
+	}
+	# nocov end
+	ret
+}
 
 bb2merc = function(x, cls = "ggmap") { # return bbox in the appropriate "web mercator" CRS
 	wgs84 = st_crs(4326)
@@ -654,7 +722,17 @@ bb2merc = function(x, cls = "ggmap") { # return bbox in the appropriate "web mer
 	st_bbox(st_transform(pts, merc))
 }
 
-degAxis = function (side, at, labels, ..., lon, lat, ndiscr, reset) {
+#' functions only exported to be used internally by stars
+#' @name stars
+#' @export
+#' @param side ignore
+#' @param at ignore
+#' @param labels ignore
+#' @param lon ignore
+#' @param lat ignore
+#' @param ndiscr ignore
+#' @param reset ignore
+.degAxis = function (side, at, labels, ..., lon, lat, ndiscr, reset) {
 	if (missing(at))
        	at = axTicks(side)
 	if (missing(labels)) {
@@ -667,20 +745,44 @@ degAxis = function (side, at, labels, ..., lon, lat, ndiscr, reset) {
 	axis(side, at = at, labels = labels, ...)
 }
 
-image.scale = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
-	at = NULL, ..., axes = FALSE) {
+#' @name stars
+#' @export
+#' @param z ignore
+#' @param col ignore
+#' @param breaks ignore
+#' @param key.pos ignore
+#' @param add.axis ignore
+#' @param axes ignore
+#' @param logz ignore
+#' @param ... ignore
+.image_scale = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
+		at = NULL, ..., axes = FALSE, key.length, logz = FALSE) {
 	if (!is.null(breaks) && length(breaks) != (length(col) + 1))
 		stop("must have one more break than colour")
-	zlim = range(z, na.rm=TRUE)
+	zlim = range(z, na.rm = TRUE)
 	if (is.null(breaks))
 		breaks = seq(zlim[1], zlim[2], length.out = length(col) + 1)
+	if (is.character(key.length)) {
+		kl = as.numeric(gsub(" cm", "", key.length))
+		sz = if (key.pos %in% c(1,3))
+				dev.size("cm")[1]
+			else
+				dev.size("cm")[2]
+		key.length = kl/sz
+	}
+	if (is.null(at)) {
+		br = range(breaks)
+		at = pretty(br)
+		at = at[at > br[1] & at < br[2]]
+	}
+	kl_lim = function(r, kl) { m = mean(r); (r - m)/kl + m }
 	if (key.pos %in% c(1,3)) {
 		ylim = c(0, 1)
-		xlim = range(breaks)
+		xlim = kl_lim(range(breaks), key.length)
 		mar = c(0, ifelse(axes, 2.1, 1), 0, 1)
 	}
 	if (key.pos %in% c(2,4)) {
-		ylim = range(breaks)
+		ylim = kl_lim(range(breaks), key.length)
 		xlim = c(0, 1)
 		mar = c(ifelse(axes, 2.1, 1), 0, 1.2, 0)
 	}
@@ -691,36 +793,68 @@ image.scale = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
 	for (i in seq(poly))
 		poly[[i]] = c(breaks[i], breaks[i+1], breaks[i+1], breaks[i])
 	plot(1, 1, t = "n", ylim = ylim, xlim = xlim, axes = FALSE,
-		xlab = "", ylab = "", xaxs = "i", yaxs = "i", ...)
+		xlab = "", ylab = "", xaxs = "i", yaxs = "i")
+	offset = 0.2
+	offs = switch(key.pos,
+		c(0,0,-offset,-offset),
+		c(0,0,-offset,-offset),
+		c(offset,offset,0,0),
+		c(offset,offset,0,0)) 
 	for(i in seq_along(poly)) {
 		if (key.pos %in% c(1,3))
-			polygon(poly[[i]], c(0, 0, 1, 1), col=col[i], border=NA)
+			polygon(poly[[i]], c(0, 0, 1, 1) + offs, col = col[i], border = NA)
 		if (key.pos %in% c(2,4))
-			polygon(c(0, 0, 1, 1), poly[[i]], col=col[i], border=NA)
+			polygon(c(0, 0, 1, 1) + offs, poly[[i]], col = col[i], border = NA)
 	}
 
-	box()
+	# box() now would draw around [0,1]:
+	bx = c(breaks[1], rep(tail(breaks, 1), 2), breaks[1])
+	if (key.pos %in% c(1,3))
+		polygon(bx, c(0, 0, 1, 1) + offs, col = NA, border = 'black')
+	if (key.pos %in% c(2,4))
+		polygon(c(0, 0, 1, 1) + offs, bx, col = NA, border = 'black')
+
+	labels = if (logz)
+			parse(text = paste0("10^", at))
+		else if (inherits(breaks, "POSIXt"))
+			format(at)
+		else
+			TRUE
+
 	if (add.axis)
-		axis(key.pos, at)
+		axis(key.pos, at = at, labels = labels)
 }
 
-image.scale.factor = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
-	at = NULL, ..., axes = FALSE, key.size) {
+#' @name stars
+#' @export
+#' @param key.width ignore
+.image_scale_factor = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
+	..., axes = FALSE, key.width, key.length) {
 
 	n = length(z)
-	ksz = as.numeric(gsub(" cm", "", key.size)) * 2
+	# TODO:
+	ksz = as.numeric(gsub(" cm", "", key.width)) * 2
 	breaks = (0:n) + 0.5
+	if (is.character(key.length)) {
+		kl = as.numeric(gsub(" cm", "", key.length))
+		sz = if (key.pos %in% c(1,3))
+				dev.size("cm")[1]
+			else
+				dev.size("cm")[2]
+		key.length = kl/sz
+	}
+	kl_lim = function(r, kl) { m = mean(r); (r - m)/kl + m }
 	if (key.pos %in% c(1,3)) {
 		ylim = c(0, 1)
-		xlim = range(breaks)
+		xlim = kl_lim(range(breaks), key.length)
 		mar = c(0, ifelse(axes, 2.1, 1), 0, 1)
 		mar[key.pos] = 2.1
 	} else {
-		ylim = range(breaks)
+		ylim = kl_lim(range(breaks), key.length)
 		xlim = c(0, 1)
 		mar = c(ifelse(axes, 2.1, 1), 0, 1.2, 0)
 		#mar[key.pos] = 2.1
-		mar[key.pos] = ksz - 1.3
+		mar[key.pos] = max(ksz - 1.3, 0.0)
 	}
 	par(mar = mar)
 
@@ -728,7 +862,7 @@ image.scale.factor = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
 	for (i in seq(poly))
 		poly[[i]] = c(breaks[i], breaks[i+1], breaks[i+1], breaks[i])
 	plot(1, 1, t = "n", ylim = ylim, xlim = xlim, axes = FALSE,
-		xlab = "", ylab = "", xaxs = "i", yaxs = "i", ...)
+		xlab = "", ylab = "", xaxs = "i", yaxs = "i")
 	for(i in seq_along(poly)) {
 		if (key.pos %in% c(1,3))
 			polygon(poly[[i]], c(0, 0, 1, 1), col = col[i], border = NA)
@@ -736,7 +870,13 @@ image.scale.factor = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
 			polygon(c(0, 0, 1, 1), poly[[i]], col = col[i], border = NA)
 	}
 
-	box()
+	# box() now would draw around [0,1]:
+	bx = c(breaks[1], rep(tail(breaks, 1), 2), breaks[1])
+	if (key.pos %in% c(1,3))
+		polygon(bx, c(0, 0, 1, 1), col = NA, border = 'black')
+	if (key.pos %in% c(2,4))
+		polygon(c(0, 0, 1, 1), bx, col = NA, border = 'black')
+
 	if (add.axis) {
 		opar = par(las = 1)
 		axis(key.pos, at = 1:n, labels = z)
@@ -749,8 +889,6 @@ image.scale.factor = function(z, col, breaks = NULL, key.pos, add.axis = TRUE,
 identify.sfc = function(x, ..., n = min(10, length(x)), type = "n") {
 	l = locator(n, type = type)
 	pts = st_as_sf(as.data.frame(do.call(cbind, l)), coords = c("x", "y"), crs = st_crs(x))
-	#i = st_intersects(x, pts)
-	#which(lengths(i) > 0)
 	sapply(st_intersects(pts, x), function(x) if (length(x)) x[1] else NA_integer_)
 }
 

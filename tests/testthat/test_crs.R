@@ -14,7 +14,7 @@ test_that("st_crs works", {
   expect_silent(st_crs(nc2) <- 3857)
   #expect_warning(st_crs(nc2) <- 0, "Failed to lookup UOM CODE") -> changes in gdal 2.2:
   #expect_warning(st_crs(nc2) <- 0)
-  expect_warning(st_crs(nc2) <- 1000, "not found in EPSG")
+  #expect_warning(st_crs(nc2) <- 1000, "not found in EPSG") -> changes in gdal 2.5.0
   expect_silent(st_crs(nc1) <- st_crs(nc1))
 
   expect_error(st_crs("+proj=ll"), "invalid crs")
@@ -35,18 +35,40 @@ test_that("st_proj_info works", {
   expect_silent(x <- st_proj_info("ellps"))
   expect_silent(x <- st_proj_info("datum"))
   expect_silent(x <- st_proj_info("units"))
+})
+
+
+test_that("st_proj_info works for datum files", {
+  skip_if_not(sf_extSoftVersion()[["proj.4"]] < "6.0.0")
   expect_silent(x <- st_proj_info("have_datum_files"))
 })
 
 test_that("$.crs works", {
   expect_true(is.numeric(st_crs("+init=epsg:3857")$epsg))
   expect_true(is.character(st_crs("+init=epsg:3857")$proj4string))
+  expect_true(is.numeric(st_crs("+init=epsg:3857 +units=m")$b)) 
+  expect_true(is.character(st_crs("+init=epsg:3857 +units=m")$units))
+})
+
+test_that("$.crs works 2", {
+  skip_if_not(sf_extSoftVersion()[["GDAL"]] < "2.5.0")
   expect_true(is.numeric(st_crs("+init=epsg:3857 +units=km")$b)) 
   expect_true(is.character(st_crs("+init=epsg:3857 +units=km")$units))
 })
 
 test_that("CRS comparison uses ellipsoid and datum (#180)", {
-	expect_equal(
-		st_crs("+proj=tmerc +lat_0=0 +lon_0=0 +k=0.9999 +x_0=304800 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"),
-		st_crs("+proj=tmerc +lat_0=0 +lon_0=0 +k=0.9999 +x_0=304800 +y_0=0 +datum=NAD83 +units=m +no_defs"))
+  skip_if_not(sf_extSoftVersion()[["GDAL"]] < "2.5.0")
+  expect_equal(
+    st_crs("+proj=tmerc +lat_0=0 +lon_0=0 +k=0.9999 +x_0=304800 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"),
+    st_crs("+proj=tmerc +lat_0=0 +lon_0=0 +k=0.9999 +x_0=304800 +y_0=0 +datum=NAD83 +units=m +no_defs"))
+})
+
+test_that("Can create dummy crs", {
+    expect_equal(st_crs(0, valid = FALSE), structure(list(epsg = 0, proj4string = ""), class = "crs"))
+    expect_equal(st_crs(991115, proj4text = "+random", valid = FALSE),
+                 structure(list(epsg = 991115, proj4string = "+random"), class = "crs"))
+})
+
+test_that("Warning if trying to supply proj4 with numeric", {
+    expect_warning(st_crs(2939, proj4text = "+random"), "`proj4text` is not used to validate crs")
 })

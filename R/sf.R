@@ -42,19 +42,18 @@ st_as_sf.data.frame = function(x, ..., agr = NA_agr_, coords, wkt,
 		else
 			x$geometry = st_as_sfc(as.character(x[[wkt]]))
 	} else if (! missing(coords)) {
-		if (na.fail && any(is.na(x[coords])))
+		cc = as.data.frame(lapply(x[coords], as.numeric))
+		if (na.fail && any(is.na(cc)))
 			stop("missing values in coordinates not allowed")
 		classdim = getClassDim(rep(0, length(coords)), length(coords), dim, "POINT")
-		x$geometry = structure( lapply(split(as.vector(t(as.matrix(x[, coords]))),
-				rep(seq_len(nrow(x)), each = length(coords))),
-				function(vec) structure(vec, class = classdim)),
+		x$geometry = structure( points_rcpp(as.matrix(cc), dim),
 			n_empty = 0L, precision = 0, crs = NA_crs_,
 			bbox = structure(
 				c(xmin = min(x[[coords[1]]], na.rm = TRUE),
 				ymin = min(x[[coords[2]]], na.rm = TRUE),
 				xmax = max(x[[coords[1]]], na.rm = TRUE),
 				ymax = max(x[[coords[2]]], na.rm = TRUE)), class = "bbox"),
-			class =  c("sfc_POINT", "sfc" ))
+			class =  c("sfc_POINT", "sfc" ), names = NULL)
 
 		if (is.character(coords))
 			coords = match(coords, names(x))
@@ -80,7 +79,7 @@ st_geometry = function(obj, ...) UseMethod("st_geometry")
 
 #' @name st_geometry
 #' @export
-st_geometry.sf = function(obj, ...) { 
+st_geometry.sf = function(obj, ...) {
 	ret =  obj[[attr(obj, "sf_column")]]
 	if (!inherits(ret, "sfc")) # corrupt!
 		stop('attr(obj, "sf_column") does not point to a geometry column.\nDid you rename it, without setting st_geometry(obj) <- "newname"?')
@@ -119,26 +118,26 @@ st_geometry.sfg = function(obj, ...) st_sfc(obj)
 	stopifnot(inherits(value, "sfc") || is.character(value))
 	if (inherits(value, "sfc"))
 		stopifnot(nrow(x) == length(value))
-	a = vapply(x, function(v) inherits(v, "sfc"), TRUE)
-
-	if (any(a)) {
-		w = which(a)
-		sf_col = attr(x, "sf_column")
-		if (! is.null(sf_col))
-			x[[ sf_col ]] = value
-		else {
-			if (length(w) > 1)
-				warning("overwriting first sfc column")
-			x[[ which(a)[1L] ]] = value
-		}
+	if (is.character(value))
+		st_sf(x, sf_column_name = value)
+	else {
+		a = vapply(x, function(v) inherits(v, "sfc"), TRUE)
+		if (any(a)) {
+			w = which(a)
+			sf_col = attr(x, "sf_column")
+			if (! is.null(sf_col))
+				x[[ sf_col ]] = value
+			else {
+				if (length(w) > 1)
+					warning("overwriting first sfc column")
+				x[[ which(a)[1L] ]] = value
+			}
+		} else
+			x$geometry = value
 		st_sf(x)
-	} else {
-		if (is.character(value))
-			x = st_sf(x, sf_column_name = value)
-		else
-			st_sf(x, geometry = value)
 	}
 }
+
 
 #' @export
 `st_geometry<-.sf` = function(x, value) {
@@ -193,6 +192,7 @@ list_column_to_sfc = function(x) {
 #' @param precision numeric; see \link{st_as_binary}
 #' @param sf_column_name character; name of the active list-column with simple feature geometries; in case
 #' there is more than one and \code{sf_column_name} is \code{NULL}, the first one is taken.
+#' @param sfc_last logical; if \code{TRUE}, \code{sfc} columns are always put last, otherwise column order is left unmodified.
 #' @param check_ring_dir see \link{st_read}
 #' @details \code{agr}, attribute-geometry-relationship, specifies for each non-geometry attribute column how it relates to the geometry, and can have one of following values: "constant", "aggregate", "identity". "constant" is used for attributes that are constant throughout the geometry (e.g. land use), "aggregate" where the attribute is an aggregate value over the geometry (e.g. population density or population count), "identity" when the attributes uniquely identifies the geometry of particular "thing", such as a building ID or a city name. The default value, \code{NA_agr_}, implies we don't know.
 #'
@@ -209,7 +209,7 @@ list_column_to_sfc = function(x) {
 #' @export
 st_sf = function(..., agr = NA_agr_, row.names,
 		stringsAsFactors = default.stringsAsFactors(), crs, precision, 
-		sf_column_name = NULL, check_ring_dir = FALSE) {
+		sf_column_name = NULL, check_ring_dir = FALSE, sfc_last = TRUE) {
 	x = list(...)
 	if (length(x) == 1L && (inherits(x[[1L]], "data.frame") || (is.list(x) && !inherits(x[[1L]], "sfc"))))
 		x = x[[1L]]
@@ -217,16 +217,17 @@ st_sf = function(..., agr = NA_agr_, row.names,
 	# find the sfc column(s):
 	all_sfc_columns = vapply(x, function(x) inherits(x, "sfc"), TRUE)
 	if (! any(all_sfc_columns)) { # try to create sfc from list-columns:
-		x = lapply(x, list_column_to_sfc)
-		all_sfc_columns = vapply(x, function(x) inherits(x, "sfc"), TRUE)
+		xlst = lapply(x, list_column_to_sfc)
+		all_sfc_columns = vapply(xlst, function(x) inherits(x, "sfc"), TRUE)
 		if (! any(all_sfc_columns))
 			stop("no simple features geometry column present")
+		x[all_sfc_columns] = xlst[all_sfc_columns]
 	}
 
 	all_sfc_columns = which(unlist(all_sfc_columns))
 
 	# set names if not present:
-	all_sfc_names = if (!is.null(names(x)) && nzchar(names(x)[all_sfc_columns]))
+	all_sfc_names = if (!is.null(names(x)) && any(nzchar(names(x)[all_sfc_columns])))
 		names(x)[all_sfc_columns]
 	else {
 		object = as.list(substitute(list(...)))[-1L]
@@ -248,18 +249,27 @@ st_sf = function(..., agr = NA_agr_, row.names,
 	if (missing(row.names))
 		row.names = seq_along(x[[sf_column]])
 
-	df = if (length(x) == 1) # ONLY sfc
+	df = if (inherits(x, "tbl_df")) # no worries:
+			x
+		else if (length(x) == 1) # ONLY one sfc
 			data.frame(row.names = row.names)
-		else {
-			if (inherits(x, "data.frame"))
-				x[-all_sfc_columns]
-			else # create a data.frame from list:
-				data.frame(x[-all_sfc_columns], row.names = row.names,
-					stringsAsFactors = stringsAsFactors)
-		}
+		else if (!sfc_last & inherits(x, "data.frame"))
+			x
+		else if (sfc_last && inherits(x, "data.frame"))
+			x[-all_sfc_columns]
+		else
+			cbind(data.frame(row.names = row.names), 
+				as.data.frame(x[-all_sfc_columns], 
+					stringsAsFactors = stringsAsFactors, optional = TRUE))
 
-	for (i in seq_along(all_sfc_names))
-		df[[ all_sfc_names[i] ]] = st_sfc(x[[ all_sfc_columns[i] ]], check_ring_dir = check_ring_dir)
+	if (check_ring_dir) { # process:
+		for (i in seq_along(all_sfc_names))
+			df[[ all_sfc_names[i] ]] = st_sfc(x[[ all_sfc_columns[i] ]], 
+				check_ring_dir = check_ring_dir)
+	} else { # copy:
+		for (i in seq_along(all_sfc_names))
+			df[[ all_sfc_names[i] ]] = x[[ all_sfc_columns[i] ]]
+	}
 
 	if (! missing(precision))
 		attr(df[[sfc_name]], "precision") = precision
@@ -328,14 +338,23 @@ st_sf = function(..., agr = NA_agr_, row.names,
 		x
 	else if (! drop) {
 		x[[ sf_column ]] = geom
-		st_set_agr(st_sf(x, sf_column_name = sf_column),
-			agr[match(setdiff(names(x), sf_column), names(agr))])
+		x = st_sf(x, sf_column_name = sf_column, sfc_last = FALSE)
+		st_set_agr(x, agr[match(setdiff(names(x), sf_column), names(agr))])
 	} else
 		structure(x, class = setdiff(class(x), "sf"))
 }
 
 #' @export
-"$<-.sf" = function(x, i, value) { x[[i]] = value; x }
+"$<-.sf" = function(x, i, value) {
+	if (is.null(value) && inherits(x[[i]], "sfc") &&
+			((is.character(i) && i == attr(x, "sf_column"))
+				|| (is.integer(i) && names(x)[i] == attr(x, "sf_column"))))
+		st_set_geometry(x, NULL)
+	else {
+		x[[i]] = value
+		x
+	}
+}
 
 #' @export
 "[[<-.sf" = function(x, i, value) {
@@ -417,4 +436,13 @@ merge.sf = function(x, y, ...) {
 as.data.frame.sf = function(x, ...) {
 	class(x) <- setdiff(class(x), "sf")
 	NextMethod()
+}
+
+#' @export
+#' @name st_geometry
+#' @details \code{st_drop_geometry} drops the geometry of its argument, and reclasses it accordingly
+st_drop_geometry = function(x) {
+	if (!inherits(x, "sf"))
+		stop("st_drop_geometry only works with objects of class sf")
+	st_set_geometry(x, NULL)
 }

@@ -3,17 +3,11 @@
 \name{geos_binary_ops}
 \alias{geos_binary_ops}
 \alias{st_intersection}
-\alias{geos_binary_ops}
 \alias{st_intersection.sfc}
-\alias{geos_binary_ops}
 \alias{st_intersection.sf}
-\alias{geos_binary_ops}
 \alias{st_difference}
-\alias{geos_binary_ops}
 \alias{st_difference.sfc}
-\alias{geos_binary_ops}
 \alias{st_sym_difference}
-\alias{geos_binary_ops}
 \alias{st_snap}
 \title{Geometric operations on pairs of simple feature geometry sets}
 \usage{
@@ -52,12 +46,16 @@ When called with missing \code{y}, the \code{sfc} method for \code{st_intersecti
 
 when called with a missing \code{y}, the \code{sf} method for \code{st_intersection} returns an \code{sf} object with attributes taken from the contributing feature with lowest index; two fields are added: \code{n.overlaps} with the number of overlapping features in \code{x}, and a list-column \code{origins} with indexes of all overlapping features.
 
-When \code{st_difference} is called with a single argument, 
+When \code{st_difference} is called with a single argument,
 overlapping areas are erased from geometries that are indexed at greater
-numbers in the argument to \code{x}; geometries that are empty 
-or contained fully inside geometries with higher priority are removed entirely. 
+numbers in the argument to \code{x}; geometries that are empty
+or contained fully inside geometries with higher priority are removed entirely.
 The \code{st_difference.sfc} method with a single argument returns an object with
 an \code{"idx"} attribute with the orginal index for returned geometries.
+}
+\note{
+To find whether pairs of simple feature geometries intersect, use
+the function \code{\link{st_intersects}} instead of \code{st_intersection}.
 }
 \examples{
 set.seed(131)

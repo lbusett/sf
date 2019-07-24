@@ -34,6 +34,10 @@ Ops.crs <- function(e1, e2) {
 #' @name st_crs
 #' @param x numeric, character, or object of class \link{sf} or \link{sfc}
 #' @param ... ignored
+#' @param valid default TRUE. This allows to create crs without checking against
+#' the local proj4 database. It can be used to synchronize crs with a remote
+#' database, but avoid it as much as possible.
+#' @param proj4text character. Must be used in conjunction with \code{valid = FALSE}.
 #' @export
 #' @return If \code{x} is numeric, return \code{crs} object for SRID \code{x}; if \code{x} is character, return \code{crs} object for proj4string \code{x}; if \code{wkt} is given, return \code{crs} object for well-known-text representation \code{wkt}; if \code{x} is of class \code{sf} or \code{sfc}, return its \code{crs} object.
 #' @details The *crs functions create, get, set or replace the \code{crs} attribute of a simple feature geometry
@@ -54,7 +58,14 @@ st_crs.sf = function(x, ...) st_crs(st_geometry(x), ...)
 
 #' @name st_crs
 #' @export
-st_crs.numeric = function(x, ...) make_crs(x)
+st_crs.numeric = function(x, proj4text = "", valid = TRUE, ...) {
+    if (!valid)
+        return(structure(list(epsg = x, proj4string = proj4text), class = "crs"))
+    if (proj4text != "")
+        warning("`proj4text` is not used to validate crs. Remove `proj4text` ",
+                "argument or set `valid = FALSE` to stop warning.")
+    make_crs(x)
+}
 
 #' @name st_crs
 #' @export
@@ -69,7 +80,7 @@ st_crs.character = function(x, ..., wkt) {
 #' @name st_crs
 #' @param parameters logical; \code{FALSE} by default; if \code{TRUE} return a list of coordinate reference system parameters, with named elements \code{SemiMajor}, \code{InvFlattening}, \code{units_gdal}, \code{IsVertical}, \code{WktPretty}, and \code{Wkt}
 #' @export
-st_crs.sfc = function(x, ..., parameters = FALSE) { 
+st_crs.sfc = function(x, ..., parameters = FALSE) {
 	crs = attr(x, "crs")
 	if (parameters) {
 		if (is.na(crs))
@@ -82,7 +93,16 @@ st_crs.sfc = function(x, ..., parameters = FALSE) {
 
 #' @name st_crs
 #' @export
-st_crs.bbox = function(x, ...) attr(x, "crs")
+st_crs.bbox = function(x, ...) {
+	if (is.null(attr(x, "crs")))
+		NA_crs_
+	else
+		attr(x, "crs")
+}
+
+#' @name st_crs
+#' @export
+st_crs.CRS = function(x, ...) st_crs(x@projargs)
 
 #' @name st_crs
 #' @export
@@ -124,6 +144,10 @@ valid_proj4string = function(p4s) {
 
 # return crs object from crs, integer, or character string
 make_crs = function(x, wkt = FALSE) {
+
+	if (inherits(x, "CRS"))
+		x = x@projargs
+
 	if (wkt)
 		CPL_crs_from_wkt(x)
 	else if (is.na(x))
@@ -189,42 +213,24 @@ st_is_longlat = function(x) {
 	crs = st_crs(x)
 	if (is.na(crs))
 		NA
-	else
-		isTRUE(crs$proj == "longlat")
+	else {
+		ret = isTRUE(crs$proj == "longlat")
+		if (ret && inherits(x, c("sf", "sfc", "stars"))) {
+			bb = st_bbox(x)
+			# check for potentially meaningless value range:
+			eps = sqrt(.Machine$double.eps)
+			if (all(!is.na(unclass(bb))) && 
+					(bb["xmin"] < (-180-eps) || bb["xmax"] > (360+eps) || bb["ymin"] < (-90-eps) || bb["ymax"] > (90+eps)))
+				warning("bounding box has potentially an invalid value range for longlat data")
+		}
+		ret
+	}
 }
 
 # a = "b" => a is the proj.4 unit (try: cs2cs -lu); "b" is the udunits2 unit
-udunits_from_proj = if (utils::packageVersion("units") < "0.5-2") {
+udunits_from_proj = list(
 #   PROJ.4     UDUNITS
-c(  `km` =     "km",
-	`m` =      "m",
-	`dm` =     "dm",
-	`cm` =     "cm",
-	`mm` =     "mm",
-	`kmi` =    "nautical_mile",
-	`in` =     "in",
-	`ft` =     "ft",
-	`yd` =     "yd",
-	`mi` =     "mi",
-	`fath` =   "fathom",
-	`ch` =     "chain",
-	`link` =   "0.201168 m",
-	`us-in` =  "1./39.37 m",
-	`us-ft` =  "US_survey_foot",
-	`us-yd` =  "US_survey_yard",
-	`us-ch` =  "chain",
-	`us-mi` =  "US_survey_mile",
-	`ind-yd` = "0.91439523 m",
-	`ind-ft` = "0.30479841 m",
-	`ind-ch` = "20.11669506 m"
-)
-} else {
-units::install_conversion_constant("m", "link", 0.201168)
-units::install_conversion_constant("m", "us_in", 1./39.37)
-units::install_conversion_constant("m", "ind_yd", 0.91439523)
-units::install_conversion_constant("m", "ind_ft", 0.30479841)
-units::install_conversion_constant("m", "ind_ch", 20.11669506)
-list(`km` =    as_units("km"),
+	`km` =    as_units("km"),
 	`m` =      as_units("m"),
 	`dm` =     as_units("dm"),
 	`cm` =     as_units("cm"),
@@ -236,17 +242,16 @@ list(`km` =    as_units("km"),
 	`mi` =     as_units("mi"),
 	`fath` =   as_units("fathom"),
 	`ch` =     as_units("chain"),
-	`link` =   as_units("link"),
-	`us-in` =  as_units("us_in"),
+	`link` =   as_units("link", check_is_valid = FALSE), # not (yet) existing; set in .onLoad()
+ 	`us-in` =  as_units("us_in", check_is_valid = FALSE),
 	`us-ft` =  as_units("US_survey_foot"),
 	`us-yd` =  as_units("US_survey_yard"),
 	`us-ch` =  as_units("chain"),
 	`us-mi` =  as_units("US_survey_mile"),
-	`ind-yd` = as_units("ind_yd"),
-	`ind-ft` = as_units("ind_ft"),
-	`ind-ch` = as_units("ind_ch")
+	`ind-yd` = as_units("ind_yd", check_is_valid = FALSE),
+	`ind-ft` = as_units("ind_ft", check_is_valid = FALSE),
+	`ind-ch` = as_units("ind_ch", check_is_valid = FALSE)
 )
-}
 
 crs_parameters = function(x) {
 	stopifnot(!is.na(x))
@@ -298,8 +303,8 @@ is.na.crs = function(x) {
 #' @examples
 #' st_crs("+init=epsg:3857")$epsg
 #' st_crs("+init=epsg:3857")$proj4string
-#' st_crs("+init=epsg:3857 +units=km")$b     # numeric
-#' st_crs("+init=epsg:3857 +units=km")$units # character
+#' st_crs("+init=epsg:3857 +units=m")$b     # numeric
+#' st_crs("+init=epsg:3857 +units=m")$units # character
 #' @export
 `$.crs` = function(x, name) {
 	if (is.numeric(name) || name %in% names(x))
@@ -327,7 +332,19 @@ print.crs = function(x, ...) {
        cat("  EPSG:", x$epsg, "\n")
     if (is.na(x$proj4string))
       stop("  invalid crs: please report an issue") # nocov
-    else 
+    else
       cat("  proj4string: \"", x$proj4string, "\"\n", sep = "")
   }
+}
+
+#' @export
+st_crs.Raster = function(x, ...) {
+	st_crs(x@crs@projargs) # nocov
+}
+
+#' @export
+st_crs.Spatial = function(x, ...) {
+	if (! requireNamespace("sp", quietly = TRUE))
+		stop("package sp required, please install it first")
+	st_crs(sp::proj4string(x)) # nocov
 }

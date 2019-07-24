@@ -43,7 +43,8 @@ x = st_intersection(g, nc)
 ls = st_sfc(st_linestring(rbind(c(0,0),c(0,1))),
 st_linestring(rbind(c(0,0),c(10,0))))
 
-set.seed(13531) # make reproducible
+suppressWarnings(RNGversion("3.5.3"))
+set.seed(13531)
 
 st_line_sample(ls, density = 1, type = "random")
 
@@ -61,6 +62,10 @@ length(g)
 g = st_make_grid(what = "corners")
 length(g)
 
+g1 = st_make_grid(nc, 0.1, what = "polygons", square = FALSE)
+g2 = st_make_grid(nc, 0.1, what = "points", square = FALSE)
+
+# st_line_merge:
 mls = st_multilinestring(list(rbind(c(0,0), c(1,1)), rbind(c(2,0), c(1,1))))
 st_line_merge(mls)
 
@@ -96,7 +101,9 @@ st_relate(grd, pattern = "****0****")
 st_rook = function(a, b = a, ...) st_relate(a, b, pattern = "F***1****", ...)
 st_rook(grd, sparse = FALSE)
 
-try(st_relate(st_point(), st_point(), pattern = "FF*FF****")) # error: use st_disjoint
+#if (Sys.getenv("USER") %in% c("edzer", "travis")) { # memory leaks:
+  try(st_relate(st_point(), st_point(), pattern = "FF*FF****")) # error: use st_disjoint
+#}
 
 a = st_is_within_distance(nc[c(1:3,20),], nc[1:3,], 100000, sparse = FALSE)
 b = st_is_within_distance(nc[c(1:3,20),], nc[1:3,], units::set_units(100000, m), sparse = FALSE)
@@ -113,8 +120,10 @@ x = st_is_within_distance(nc_3857, nc_3857, 100000)
 y = st_is_within_distance(nc_3857, nc_3857, units::set_units(100, km))
 all.equal(x, y)
 
+pe = st_sfc(st_point())
 p = st_sfc(st_point(c(0,0)), st_point(c(0,1)), st_point(c(0,2)))
 st_distance(p, p)
+st_distance(p, pe)
 st_distance(p, p, by_element = TRUE)
 st_crs(p) = 4326
 st_distance(p, p[c(2,3,1)], by_element = TRUE)
@@ -141,6 +150,10 @@ st_node(st_sf(a = 1, st_sfc(l)))
 dim(lst)
 # as.matrix.sgbp:
 as.matrix(lst)[1:5, 1:5]
+# negate:
+!lst
+# as.data.frame:
+head(as.data.frame(lst), 10)
 
 # snap:
 nc1 = st_transform(nc, 32119)
@@ -155,7 +168,8 @@ B = st_as_sfc("LINESTRING (0 100, 0 10, 80 10)")
 st_distance(c(A,B))
 st_distance(c(A,B), which = "Hausdorff")
 st_distance(c(A,B), which = "Hausdorff", par = 0.001)
-
+LE = st_as_sfc("LINESTRING EMPTY")
+st_distance(c(A, LE), which = "Hausdorff", par = 0.001)
 
 # one-argument st_intersection and st_difference:
 set.seed(131)
@@ -180,3 +194,65 @@ i = st_intersection(sf) # all intersections
 plot(i["n.overlaps"])
 summary(i$n.overlaps - lengths(i$origins))
 
+# st_nearest_points:
+pt1 = st_point(c(.1,.1))
+pt2 = st_point(c(.9,.9))
+b1 = st_buffer(pt1, 0.1)
+b2 = st_buffer(pt2, 0.1)
+plot(b1, xlim = c(0,1), ylim = c(0,1))
+plot(b2, add = TRUE)
+(ls0 = try(st_nearest_points(b1, b2))) # sfg
+(ls = try(st_nearest_points(st_sfc(b1), st_sfc(b2)))) # sfc
+(ls = try(st_nearest_points(st_sfc(b1), st_sfc(b2), pairwise = TRUE))) # sfc
+identical(ls0, ls)
+# plot(ls, add = TRUE, col = 'red')
+
+nc = read_sf(system.file("gpkg/nc.gpkg", package="sf"))
+plot(st_geometry(nc))
+ls = try(st_nearest_points(nc[1,], nc))
+# plot(ls, col = 'red', add = TRUE)
+pts = st_cast(ls, "POINT") # gives all start & end points
+# starting, "from" points, corresponding to x:
+plot(pts[seq(1, 200, 2)], add = TRUE, col = 'blue')
+# ending, "to" points, corresponding to y:
+plot(pts[seq(2, 200, 2)], add = TRUE, col = 'red')
+
+# points to nearest features
+ls1 = st_linestring(rbind(c(0,0), c(1,0)))
+ls2 = st_linestring(rbind(c(0,0.1), c(1,0.1)))
+ls3 = st_linestring(rbind(c(0,1), c(1,1)))
+(l = st_sfc(ls1, ls2, ls3))
+
+p1 = st_point(c(0.1, -0.1))
+p2 = st_point(c(0.1, 0.11))
+p3 = st_point(c(0.1, 0.09))
+p4 = st_point(c(0.1, 0.9))
+p5 = st_point()
+
+(p = st_sfc(p1, p2, p3, p4, p5))
+#st_nearest_points(p, l)
+n = try(st_nearest_feature(p,l))
+if (!inherits(n, "try-error")) {
+  print(st_nearest_points(p, l[n], pairwise = TRUE))
+  print(st_nearest_feature(p, l))
+  print(st_nearest_feature(p, st_sfc()))
+  print(st_nearest_feature(st_sfc(), l))
+}
+
+# can do centroid of empty geom:
+st_centroid(st_polygon())
+
+#999:
+pt = data.frame(x=1:2, y=1:2,a=letters[1:2])
+pt = st_as_sf(pt, coords=c("x","y"))
+
+bf =st_buffer(pt, dist=0.3)
+
+st_within(pt,bf, sparse=FALSE)
+st_within(pt[1,], bf[1,], sparse = FALSE)
+st_relate(pt[1,], bf[1,], pattern = "T*F**F***", sparse = FALSE)
+
+sf:::is_symmetric(pattern = "010121010")
+sf:::is_symmetric(pattern = "010121021")
+
+st_intersects(st_point(0:1), st_point(2:3)) # sfg method

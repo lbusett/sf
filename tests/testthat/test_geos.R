@@ -1,7 +1,7 @@
 context("sf: geos tests")
 
-test_that("CPL_goes_relate works", {
-  r1 = sf:::CPL_geos_relate(st_sfc(st_point(c(0,0))), st_sfc(st_linestring(rbind(c(0,0),c(1,1)))))
+test_that("st_relate works", {
+  r1 = st_relate(st_sfc(st_point(c(0,0))), st_sfc(st_linestring(rbind(c(0,0),c(1,1)))))
   library(sp)
   p = SpatialPoints(matrix(0,1,2))
   l = Lines(list(Line(rbind(c(0,0),c(1,1)))), "ID")
@@ -46,7 +46,8 @@ test_that("geos ops give warnings and errors on longlat", {
 	expect_message(st_covered_by(x,y))
 
 	expect_warning(st_buffer(x, .1))
-	expect_warning(st_simplify(x, .1))
+	expect_warning(st_buffer(x, .1, joinStyle = "BEVEL"))
+	expect_warning(st_simplify(x, dTolerance = .1))
 	expect_warning(st_centroid(x))
 	expect_silent(st_segmentize(l, 1e5))
 	expect_silent(st_segmentize(l, 1e5))
@@ -72,7 +73,7 @@ test_that("geos ops give warnings and errors on longlat", {
 test_that("st_area() works on GEOMETRY in longlat (#131)", {
   single <- list(rbind(c(0,0), c(1,0), c(1, 1), c(0,1), c(0,0))) %>% st_polygon()
   multi <- list(single + 2, single + 4) %>% st_multipolygon()
-  
+
   w <- st_sfc(single + 0.1, multi)
   expect_equal(st_area(w), 1:2)
   expect_silent(st_area(st_set_crs(w, 4326))) # outcome might depend on backend used: lwgeom if proj.4 < 490, else proj.4
@@ -89,48 +90,53 @@ suppressWarnings(lnc <- st_cast(pnc, "MULTILINESTRING"))
 glnc <- st_geometry(lnc)
 
 test_that("geom operations work on sfg or sfc or sf", {
-  expect_silent(st_buffer(pnc, 1000))
-  expect_silent(st_buffer(gpnc, 1000))
-  expect_silent(st_buffer(gpnc[[1L]], 1000))
-  
-  expect_silent(st_boundary(pnc))
-  expect_that(st_boundary(gpnc), is_a("sfc_MULTILINESTRING"))
-  expect_that(st_boundary(gpnc[[1L]]), is_a("MULTILINESTRING"))
-  
-  expect_true(inherits(st_convex_hull(pnc)$geometry, "sfc_POLYGON"))
-  expect_true(inherits(st_convex_hull(gpnc), "sfc_POLYGON"))
-  expect_true(inherits(st_convex_hull(gpnc[[1L]]), "POLYGON"))
-  
-  expect_silent(st_simplify(pnc, FALSE, 1e4))
-  expect_silent(st_simplify(gpnc, FALSE, 1e4))
-  expect_silent(st_simplify(gpnc[[1L]], FALSE, 1e4))
+	expect_silent(st_buffer(pnc, 1000))
+	expect_silent(st_buffer(gpnc, 1000))
+	expect_silent(st_buffer(gpnc[[1L]], 1000))
 
-  if (sf:::CPL_geos_version() >= "3.4.0") {  
-   expect_silent(st_triangulate(pnc))
-   expect_that(st_triangulate(gpnc), is_a("sfc_GEOMETRYCOLLECTION"))
-   expect_that(st_triangulate(gpnc[[1]]), is_a("GEOMETRYCOLLECTION"))
-  }
-  
-  expect_silent(st_polygonize(lnc))
-  expect_silent(st_polygonize(glnc)) 
-  expect_silent(st_polygonize(glnc[[1]])) 
-  
-  expect_that(st_line_merge(lnc), is_a("sf"))
-  expect_that(st_line_merge(glnc), is_a("sfc"))
-  expect_that(st_line_merge(glnc[[3]]), is_a("sfg"))
-  
-  expect_silent(st_centroid(lnc))
-  expect_that(st_centroid(glnc),  is_a("sfc_POINT"))
-  expect_that(st_centroid(glnc[[1]]),  is_a("POINT"))
+	expect_silent(st_buffer(pnc, 1000, endCapStyle = "SQUARE"))
+	expect_silent(st_buffer(gpnc, 1000, joinStyle = "BEVEL"))
+	expect_silent(st_buffer(gpnc[[1L]], 1000, joinStyle = "MITRE", mitreLimit = 0.2))
 
-  expect_silent(st_point_on_surface(lnc))
-  expect_that(st_point_on_surface(glnc),  is_a("sfc_POINT"))
-  expect_that(st_point_on_surface(glnc[[1]]),  is_a("POINT"))
-  
-  expect_silent(st_segmentize(lnc, 10000))
-  expect_silent(st_segmentize(glnc, 10000))
-  expect_silent(st_segmentize(glnc[[1]], 10000))
+	expect_silent(st_boundary(pnc))
+	expect_that(st_boundary(gpnc), is_a("sfc_MULTILINESTRING"))
+	expect_that(st_boundary(gpnc[[1L]]), is_a("MULTILINESTRING"))
+
+	expect_true(inherits(st_convex_hull(pnc)$geometry, "sfc_POLYGON"))
+	expect_true(inherits(st_convex_hull(gpnc), "sfc_POLYGON"))
+	expect_true(inherits(st_convex_hull(gpnc[[1L]]), "POLYGON"))
+
+	expect_silent(st_simplify(pnc, FALSE, 1e4))
+	expect_silent(st_simplify(gpnc, FALSE, 1e4))
+	expect_silent(st_simplify(gpnc[[1L]], FALSE, 1e4))
+
+	if (sf:::CPL_geos_version() >= "3.4.0") {
+		expect_silent(st_triangulate(pnc))
+		expect_that(st_triangulate(gpnc), is_a("sfc_GEOMETRYCOLLECTION"))
+		expect_that(st_triangulate(gpnc[[1]]), is_a("GEOMETRYCOLLECTION"))
+	}
+
+	expect_silent(st_polygonize(lnc))
+	expect_silent(st_polygonize(glnc))
+	expect_silent(st_polygonize(glnc[[1]]))
+
+	expect_that(st_line_merge(lnc), is_a("sf"))
+	expect_that(st_line_merge(glnc), is_a("sfc"))
+	expect_that(st_line_merge(glnc[[3]]), is_a("sfg"))
+
+	expect_warning(st_centroid(lnc)) # was: silent
+	expect_that(st_centroid(glnc),  is_a("sfc_POINT"))
+	expect_that(st_centroid(glnc[[1]]),  is_a("POINT"))
+
+	expect_warning(st_point_on_surface(lnc)) # was: silent
+	expect_that(st_point_on_surface(glnc),  is_a("sfc_POINT"))
+	expect_that(st_point_on_surface(glnc[[1]]),  is_a("POINT"))
+
+	expect_silent(st_segmentize(lnc, 10000))
+	expect_silent(st_segmentize(glnc, 10000))
+	expect_silent(st_segmentize(glnc[[1]], 10000))
 })
+
 
 test_that("st_union/difference/sym_difference/intersection work, for all types", {
   p = st_point(0:1)
@@ -183,7 +189,7 @@ test_that("st_difference works with partially overlapping geometries", {
 	# erase overlaps
 	out1 = st_difference(in1)
 	out2 = st_difference(in2)
-	# check that output class is correct 
+	# check that output class is correct
 	expect_is(out1, "sfc")
 	expect_is(out2, "sf")
 	# check that output geometries are valid
@@ -234,4 +240,28 @@ test_that("st_difference works with fully contained geometries", {
 	#expect_equal(out1[[2]][[1]], correct_geom[[2]][[1]])
 	#expect_equal(out2[[1]][[1]], correct_geom[[1]][[1]])
 	#expect_equal(out2[[2]][[1]], correct_geom[[2]][[1]])
+	# check change in order
+	in3 = st_sfc(list(pl2, pl1))
+	correct_geom = list(pl2, st_difference(pl1, pl2))
+	out3 = st_difference(in3)
+	expect_equal(correct_geom[[1]], out3[[1]])
+	expect_equal(correct_geom[[2]], out3[[2]])
+})
+
+test_that("binary operations work on sf objects with common column names", {
+	pol1 <- st_sfc(st_polygon(list(cbind(c(0,3,3,0,0),c(0,0,3,3,0)))))
+	pol2 <- pol1 + 1
+	sf1 <- st_sf(id = 1, pol1)
+	sf2 <- st_sf(id = 2, pol2)
+	# Test as regular data.frames
+	expect_is(st_intersection(sf1, sf2), "sf")
+	# Convert to tibbles
+	sf1 <- st_as_sf(tibble::as_tibble(sf1))
+	sf2 <- st_as_sf(tibble::as_tibble(sf2))
+	expect_is(st_intersection(sf1, sf2), c("sf", "tbl_df"))
+})
+
+test_that("binary operations on empty sfg objects return NA", {
+  x = st_point() == st_linestring()
+  expect_true(is.na(x))
 })
